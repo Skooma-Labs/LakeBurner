@@ -250,9 +250,15 @@
         },
         "lakeburner.autoRun.tickIntervalMs": {
           "type": "number",
-          "default": 2500,
+          "default": 0,
           "minimum": 0,
-          "markdownDescription": "Polling interval (milliseconds) for the Auto-Run ticker. While Auto-Run is ON, LakeBurner silently attempts **Allow** then **Keep** on this cadence so chat sessions stay unattended. Set to `0` to disable the ticker (manual button presses still work).",
+          "markdownDescription": "Polling interval (milliseconds) for the Auto-Run ticker. While Auto-Run is ON, LakeBurner silently attempts **Allow** then **Keep** on this cadence so chat sessions stay unattended. **Default `0` (off)** — because chat commands target whichever chat is currently visible, a global ticker can affect chats you didn't intend. Set to `2500` for a moderate cadence; `1000` is aggressive.",
+          "scope": "application"
+        },
+        "lakeburner.autoRun.requireWindowFocus": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "When `true`, the Auto-Run ticker only fires while the VS Code window is focused. Prevents background ticks from approving things while you're working in another app.",
           "scope": "application"
         },
         "lakeburner.initialPrompt.default": {

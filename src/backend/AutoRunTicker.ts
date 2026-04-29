@@ -36,7 +36,7 @@ export class AutoRunTicker implements vscode.Disposable {
     if (!this.autoRun.isEnabled) return;
 
     const cfg = vscode.workspace.getConfiguration(this.cfgSection);
-    const interval = cfg.get<number>("autoRun.tickIntervalMs", 2500);
+    const interval = cfg.get<number>("autoRun.tickIntervalMs", 0);
     if (!Number.isFinite(interval) || interval <= 0) {
       this.logger.info({ fn: "refresh" }, "Auto-Run Ticker Disabled (interval <= 0)");
       return;
@@ -60,6 +60,11 @@ export class AutoRunTicker implements vscode.Disposable {
       this.stop();
       return;
     }
+
+    const cfg = vscode.workspace.getConfiguration(this.cfgSection);
+    const requireFocus = cfg.get<boolean>("autoRun.requireWindowFocus", true);
+    if (requireFocus && !vscode.window.state.focused) return;
+
     this.inFlight = true;
     try {
       await this.autoClicker.pressAllow({ silent: true });
