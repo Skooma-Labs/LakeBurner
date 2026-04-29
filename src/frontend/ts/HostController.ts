@@ -6,12 +6,15 @@ import type { ProviderMonitor, ProviderInfo } from "../../backend/ProviderMonito
 import type { ActivityLog, ActivityEntry } from "../../backend/ActivityLog";
 import type { AutoRunMode } from "../../backend/AutoRunMode";
 import type { AutoClicker } from "../../backend/AutoClicker";
+import type { PromptDispatcher, PromptTarget } from "../../backend/PromptDispatcher";
 
 type IncomingFromWebview =
   | { type: "webview.ready" }
   | { type: "autoRun.toggle" }
   | { type: "autoClick.keep" }
   | { type: "autoClick.calibrate" }
+  | { type: "prompt.send"; targetId: string; prompt: string }
+  | { type: "prompt.saveDefault"; prompt: string }
   | { type: "activity.clear" }
   | HostLogEnvelope
   | { type: string; [key: string]: unknown };
@@ -20,6 +23,7 @@ type OutgoingToWebview =
   | { type: "lakeburner.providers"; providers: ProviderInfo[] }
   | { type: "lakeburner.activity"; entries: ActivityEntry[] }
   | { type: "lakeburner.autoRun"; enabled: boolean }
+  | { type: "lakeburner.prompt"; targets: PromptTarget[]; defaultPrompt: string }
   | { type: "lakeburner.error"; reason: string };
 
 function readMessageType(value: unknown): string | undefined {
@@ -49,7 +53,8 @@ export class WebviewHost implements vscode.WebviewViewProvider {
     private readonly monitor: ProviderMonitor,
     private readonly activity: ActivityLog,
     private readonly autoRun: AutoRunMode,
-    private readonly autoClicker: AutoClicker
+    private readonly autoClicker: AutoClicker,
+    private readonly dispatcher: PromptDispatcher
   ) {}
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -64,6 +69,16 @@ export class WebviewHost implements vscode.WebviewViewProvider {
 
     const nonce = crypto.randomBytes(16).toString("base64");
     webviewView.webview.html = this.getWebviewHtml(webviewView.webview, nonce);
+
+    const cfgSub = vscode.workspace.onDidChangeConfiguration((e) => {
+      if (
+        e.affectsConfiguration(`${this.cfgSection}.initialPrompt.default`) ||
+        e.affectsConfiguration(`${this.cfgSection}.initialPrompt.targets`)
+      ) {
+        this.broadcastPrompt();
+      }
+    });
+    webviewView.onDidDispose(() => cfgSub.dispose());
 
     webviewView.webview.onDidReceiveMessage(async (raw: unknown) => {
       try {
@@ -88,6 +103,7 @@ export class WebviewHost implements vscode.WebviewViewProvider {
             this.broadcastProviders();
             this.broadcastActivity();
             this.broadcastAutoRun();
+            this.broadcastPrompt();
             return;
           }
 
@@ -124,6 +140,25 @@ export class WebviewHost implements vscode.WebviewViewProvider {
             return;
           }
 
+          case "prompt.send": {
+            const targetId = String((incoming as { targetId?: unknown }).targetId ?? "").trim();
+            const prompt = String((incoming as { prompt?: unknown }).prompt ?? "");
+            if (!targetId || !prompt.trim()) {
+              this.logger.warn({ fn: "onDidReceiveMessage" }, "prompt.send Missing Fields", { hasTarget: !!targetId, hasPrompt: !!prompt.trim() });
+              return;
+            }
+            await this.dispatcher.send(targetId, prompt);
+            return;
+          }
+
+          case "prompt.saveDefault": {
+            const prompt = String((incoming as { prompt?: unknown }).prompt ?? "");
+            await this.dispatcher.setDefaultPrompt(prompt);
+            this.broadcastPrompt();
+            vscode.window.setStatusBarMessage("LakeBurner: default prompt saved", 2000);
+            return;
+          }
+
           default:
             this.logger.info({ fn: "onDidReceiveMessage" }, "Message Type Ignored", { type: incoming.type });
             return;
@@ -147,6 +182,14 @@ export class WebviewHost implements vscode.WebviewViewProvider {
 
   public broadcastAutoRun(): void {
     void this.postMessageToWebview({ type: "lakeburner.autoRun", enabled: this.autoRun.isEnabled });
+  }
+
+  public broadcastPrompt(): void {
+    void this.postMessageToWebview({
+      type: "lakeburner.prompt",
+      targets: this.dispatcher.listTargets(),
+      defaultPrompt: this.dispatcher.getDefaultPrompt(),
+    });
   }
 
   private async postMessageToWebview(payload: OutgoingToWebview): Promise<boolean> {
@@ -201,6 +244,18 @@ export class WebviewHost implements vscode.WebviewViewProvider {
               title="Capture mouse position over Copilot's Keep button for the OS-click fallback.">
         Calibrate Click Position
       </button>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Send Initial Prompt</h2>
+    <div class="stack">
+      <select id="promptTarget" class="select" aria-label="Chat target"></select>
+      <textarea id="promptText" class="textarea" rows="4" placeholder="Type the prompt to seed the chat with..."></textarea>
+      <div class="row">
+        <button id="sendPromptBtn" class="btn" type="button">Send</button>
+        <button id="savePromptBtn" class="btnSmall" type="button" title="Save current text as the default prompt.">Save Default</button>
+      </div>
     </div>
   </section>
 

@@ -18,10 +18,13 @@ type ActivityEntry = {
   data?: unknown;
 };
 
+type PromptTarget = { id: string; label: string; command: string; mode: string };
+
 type IncomingMessage =
   | { type: "lakeburner.providers"; providers: ProviderInfo[] }
   | { type: "lakeburner.activity"; entries: ActivityEntry[] }
   | { type: "lakeburner.autoRun"; enabled: boolean }
+  | { type: "lakeburner.prompt"; targets: PromptTarget[]; defaultPrompt: string }
   | { type: "lakeburner.error"; reason: string };
 
 type OutgoingMessage =
@@ -29,6 +32,8 @@ type OutgoingMessage =
   | { type: "autoRun.toggle" }
   | { type: "autoClick.keep" }
   | { type: "autoClick.calibrate" }
+  | { type: "prompt.send"; targetId: string; prompt: string }
+  | { type: "prompt.saveDefault"; prompt: string }
   | { type: "activity.clear" }
   | {
       type: "lakeburner.hostlog";
@@ -163,6 +168,31 @@ function renderAutoRun(enabled: boolean): void {
   if (state) state.textContent = enabled ? "ON" : "OFF";
 }
 
+let promptInitialized = false;
+
+function renderPrompt(targets: PromptTarget[], defaultPrompt: string): void {
+  const select = el<HTMLSelectElement>("promptTarget");
+  const text = el<HTMLTextAreaElement>("promptText");
+  if (select) {
+    const previous = select.value;
+    select.innerHTML = "";
+    for (const t of targets) {
+      const opt = document.createElement("option");
+      opt.value = t.id;
+      opt.textContent = t.label;
+      opt.title = `${t.command} (${t.mode})`;
+      select.appendChild(opt);
+    }
+    if (previous && targets.some((t) => t.id === previous)) {
+      select.value = previous;
+    }
+  }
+  if (text && !promptInitialized) {
+    text.value = defaultPrompt ?? "";
+    promptInitialized = true;
+  }
+}
+
 function bindButtons(): void {
   const autoRunBtn = el<HTMLButtonElement>("autoRunBtn");
   if (autoRunBtn) {
@@ -195,6 +225,32 @@ function bindButtons(): void {
       postMessageToHost({ type: "activity.clear" });
     });
   }
+
+  const sendPromptBtn = el<HTMLButtonElement>("sendPromptBtn");
+  if (sendPromptBtn) {
+    sendPromptBtn.addEventListener("click", () => {
+      const select = el<HTMLSelectElement>("promptTarget");
+      const text = el<HTMLTextAreaElement>("promptText");
+      const targetId = select?.value ?? "";
+      const prompt = text?.value ?? "";
+      if (!targetId || !prompt.trim()) {
+        log.warn("ui.prompt.send", "Send Skipped - missing target or prompt");
+        return;
+      }
+      log.user("ui.prompt.send", "Send Prompt Clicked", { targetId, length: prompt.length });
+      postMessageToHost({ type: "prompt.send", targetId, prompt });
+    });
+  }
+
+  const savePromptBtn = el<HTMLButtonElement>("savePromptBtn");
+  if (savePromptBtn) {
+    savePromptBtn.addEventListener("click", () => {
+      const text = el<HTMLTextAreaElement>("promptText");
+      const prompt = text?.value ?? "";
+      log.user("ui.prompt.saveDefault", "Save Default Clicked", { length: prompt.length });
+      postMessageToHost({ type: "prompt.saveDefault", prompt });
+    });
+  }
 }
 
 function handleIncoming(message: IncomingMessage): void {
@@ -209,6 +265,9 @@ function handleIncoming(message: IncomingMessage): void {
       return;
     case "lakeburner.autoRun":
       renderAutoRun(!!message.enabled);
+      return;
+    case "lakeburner.prompt":
+      renderPrompt(message.targets ?? [], message.defaultPrompt ?? "");
       return;
     case "lakeburner.error":
       log.error("host", message.reason);

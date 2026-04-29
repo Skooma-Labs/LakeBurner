@@ -2,7 +2,7 @@
   "name": "lakeburner",
   "displayName": "LakeBurner",
   "description": "User-Approval Harness for AI coding assistants. Sits beside Copilot Chat, Claude Code, and Codex inside VS Code, monitors their presence, and gates risky actions through @lakeburner.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "JBLDotExe",
   "license": "MIT",
   "repository": {
@@ -54,6 +54,11 @@
       {
         "command": "lakeburner.autoClick.calibrate",
         "title": "LakeBurner: Calibrate Auto-Click Position",
+        "category": "LakeBurner"
+      },
+      {
+        "command": "lakeburner.sendInitialPrompt",
+        "title": "LakeBurner: Send Initial Prompt",
         "category": "LakeBurner"
       }
     ],
@@ -180,6 +185,32 @@
           "properties": {
             "x": { "type": "number" },
             "y": { "type": "number" }
+          },
+          "scope": "application"
+        },
+        "lakeburner.initialPrompt.default": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Default text seeded into the LakeBurner **Send Initial Prompt** textarea. Use the **Save Default** button in the side panel to update.",
+          "scope": "application"
+        },
+        "lakeburner.initialPrompt.targets": {
+          "type": "array",
+          "default": [],
+          "markdownDescription": "Override the chat targets shown in the **Send Initial Prompt** dropdown. Leave empty for the built-in defaults (Copilot Chat, Copilot Chat Agent, Claude Code, OpenAI Codex). Each entry is `{ id, label, command, mode, extraArgs? }` where `mode` is `\"string\"`, `\"object-query\"`, or `\"clipboard\"`.",
+          "items": {
+            "type": "object",
+            "required": ["id", "command", "mode"],
+            "properties": {
+              "id": { "type": "string" },
+              "label": { "type": "string" },
+              "command": { "type": "string" },
+              "mode": {
+                "type": "string",
+                "enum": ["string", "object-query", "clipboard"]
+              },
+              "extraArgs": { "type": "object" }
+            }
           },
           "scope": "application"
         }

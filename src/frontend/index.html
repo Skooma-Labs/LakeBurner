@@ -42,6 +42,18 @@
     </section>
 
     <section class="section">
+      <h2 class="section-title">Send Initial Prompt</h2>
+      <div class="stack">
+        <select id="promptTarget" class="select" aria-label="Chat target"></select>
+        <textarea id="promptText" class="textarea" rows="4" placeholder="Type the prompt to seed the chat with..."></textarea>
+        <div class="row">
+          <button id="sendPromptBtn" class="btn" type="button">Send</button>
+          <button id="savePromptBtn" class="btnSmall" type="button" title="Save current text as the default prompt.">Save Default</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
       <div class="section-head">
         <h2 class="section-title">Activity</h2>
         <button id="clearActivityBtn" class="btnSmall" type="button">Clear</button>

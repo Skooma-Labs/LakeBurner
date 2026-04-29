@@ -7,6 +7,7 @@ import { ActivityLog } from "./backend/ActivityLog";
 import { AutoRunMode } from "./backend/AutoRunMode";
 import { registerLakeBurnerLmTools } from "./backend/LmTools";
 import { AutoClicker } from "./backend/AutoClicker";
+import { PromptDispatcher } from "./backend/PromptDispatcher";
 
 const CFG_SECTION = "lakeburner";
 
@@ -18,8 +19,9 @@ export function activate(context: vscode.ExtensionContext) {
   const monitor = new ProviderMonitor(logger, CFG_SECTION);
   const autoRun = new AutoRunMode(context, logger);
   const autoClicker = new AutoClicker(CFG_SECTION, logger, activity, context);
+  const dispatcher = new PromptDispatcher(CFG_SECTION, logger, activity);
 
-  const provider = new WebviewHost(context, CFG_SECTION, logger, monitor, activity, autoRun, autoClicker);
+  const provider = new WebviewHost(context, CFG_SECTION, logger, monitor, activity, autoRun, autoClicker, dispatcher);
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("lakeburner-view", provider, {
@@ -52,7 +54,29 @@ export function activate(context: vscode.ExtensionContext) {
         );
       }
     }),
-    vscode.commands.registerCommand("lakeburner.autoClick.calibrate", () => autoClicker.calibrateFallbackPosition())
+    vscode.commands.registerCommand("lakeburner.autoClick.calibrate", () => autoClicker.calibrateFallbackPosition()),
+    vscode.commands.registerCommand("lakeburner.sendInitialPrompt", async (arg?: { targetId?: string; prompt?: string }) => {
+      const targets = dispatcher.listTargets();
+      let targetId = arg?.targetId;
+      if (!targetId) {
+        const pick = await vscode.window.showQuickPick(
+          targets.map((t) => ({ label: t.label, description: t.command, id: t.id })),
+          { title: "LakeBurner: Send Initial Prompt", placeHolder: "Select a chat target" }
+        );
+        if (!pick) return;
+        targetId = pick.id;
+      }
+      let prompt = arg?.prompt ?? dispatcher.getDefaultPrompt();
+      if (!prompt) {
+        prompt = (await vscode.window.showInputBox({
+          title: "LakeBurner: Initial Prompt",
+          prompt: "What should the assistant start with?",
+          ignoreFocusOut: true,
+        })) ?? "";
+      }
+      if (!prompt.trim()) return;
+      await dispatcher.send(targetId, prompt);
+    })
   );
 
   logger.info({ fn: "activate" }, "LakeBurner Ready", { autoRun: autoRun.isEnabled });
