@@ -215,7 +215,8 @@ function renderAffectedChats(sessions: ChatSessionRecord[], allowedIds: string[]
   if (sessions.length === 0) {
     const empty = document.createElement("div");
     empty.className = "activity-empty";
-    empty.textContent = "No chats tracked yet. Use @lakeburner in any chat to register it.";
+    empty.textContent =
+      "No chats armed. Send an Initial Prompt or invoke @lakeburner start in any chat to add it.";
     root.appendChild(empty);
     return;
   }
@@ -223,18 +224,15 @@ function renderAffectedChats(sessions: ChatSessionRecord[], allowedIds: string[]
   const allowed = new Set(allowedIds);
 
   for (const s of sessions) {
-    const row = document.createElement("label");
+    const row = document.createElement("div");
     row.className = "chat-row";
     row.title = `id: ${s.id}\nturns: ${s.turns}\nlast: ${s.lastSeenIso}`;
 
-    const cb = document.createElement("input");
-    cb.type = "checkbox";
-    cb.checked = allowed.has(s.id);
-    cb.addEventListener("change", () => {
-      log.user("ui.affectedChats.toggle", "Affected Chat Toggled", { id: s.id, allowed: cb.checked });
-      postMessageToHost({ type: "affectedChats.setAllowed", id: s.id, allowed: cb.checked });
-    });
-    row.appendChild(cb);
+    const dot = document.createElement("span");
+    dot.className = allowed.has(s.id) ? "chat-dot chat-dot-on" : "chat-dot chat-dot-off";
+    dot.textContent = allowed.has(s.id) ? "●" : "○";
+    dot.title = allowed.has(s.id) ? "Armed" : "Tracked but not armed";
+    row.appendChild(dot);
 
     const meta = document.createElement("div");
     meta.className = "chat-meta";

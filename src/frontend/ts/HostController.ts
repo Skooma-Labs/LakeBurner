@@ -172,14 +172,11 @@ export class WebviewHost implements vscode.WebviewViewProvider {
               this.logger.warn({ fn: "onDidReceiveMessage" }, "prompt.send Missing Fields", { hasTarget: !!targetId, hasPrompt: !!prompt.trim() });
               return;
             }
-            // If Auto-Run is on, arm the ticker so the dispatched chat session
-            // gets Allow / Keep auto-pressed without requiring an @lakeburner
-            // ping in the target chat. The user opted in by clicking Send.
-            if (this.autoRun.isEnabled) {
-              const cfg = vscode.workspace.getConfiguration(this.cfgSection);
-              const durationMs = Math.max(1000, cfg.get<number>("autoRun.manualArmDurationMs", 30 * 60 * 1000));
-              await this.affected.arm(durationMs, "Send Initial Prompt");
-            }
+            // Register the dispatched chat in Affected Chats and add it to
+            // the allowlist. Fingerprint matches the one the chat participant
+            // would compute if @lakeburner is later invoked in the same
+            // conversation, so the entries collide cleanly.
+            await this.affected.registerExternal(prompt);
             await this.dispatcher.send(targetId, prompt);
             return;
           }
@@ -326,7 +323,7 @@ export class WebviewHost implements vscode.WebviewViewProvider {
       <h2 class="section-title">Affected Chats</h2>
       <button id="clearChatsBtn" class="btnSmall section-action" type="button" title="Clear all tracked chats and the allowlist.">Clear</button>
     </summary>
-    <p class="section-hint">Chats you've invoked <code>@lakeburner</code> in. Tick a chat to let Auto-Run press Allow / Keep on its behalf.</p>
+    <p class="section-hint">Chats Auto-Run will press Allow / Keep on. Add via <strong>Send Initial Prompt</strong> or <code>@lakeburner start</code>; remove via <code>@lakeburner stop</code> in that chat.</p>
     <div id="affected-chats" class="affected-chats" aria-live="polite"></div>
   </details>
 

@@ -231,10 +231,21 @@ details.section > summary > .section-title {
   align-items: flex-start;
   padding: 4px 6px;
   border-radius: 4px;
-  cursor: pointer;
+  cursor: default;
 }
 .chat-row:hover { background: var(--vscode-list-hoverBackground); }
 .chat-row input[type="checkbox"] { margin-top: 2px; }
+
+.chat-dot {
+  font-size: 14px;
+  line-height: 16px;
+  margin-top: 1px;
+  width: 14px;
+  text-align: center;
+  flex: 0 0 14px;
+}
+.chat-dot-on  { color: var(--vscode-testing-iconPassed, #3fb950); }
+.chat-dot-off { color: var(--vscode-descriptionForeground, #888); opacity: 0.7; }
 
 .chat-meta {
   display: flex;

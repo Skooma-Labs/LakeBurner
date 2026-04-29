@@ -122,30 +122,80 @@ export class AffectedChats {
   }
 
   /**
-   * True if at least one allow-listed session has been active within the last
-   * `recentMs` milliseconds. Used by the Auto-Run ticker to gate clicks.
+   * Auto-Run gate: true if any allow-listed session exists (and is still in
+   * the tracking window). Membership is the only signal — once a session is
+   * on the list, it stays armed for that window until it's explicitly removed
+   * via `@lakeburner stop`, the Clear button, or natural pruning.
    */
-  public hasRecentAllowedActivity(recentMs: number): boolean {
-    if (this.isManuallyArmed()) return true;
+  public hasRecentAllowedActivity(_recentMs: number): boolean {
     const allowed = new Set(this.listAllowedIds());
     if (allowed.size === 0) return false;
-    const cutoff = Date.now() - recentMs;
     for (const r of this.list()) {
-      if (allowed.has(r.id) && Date.parse(r.lastSeenIso) >= cutoff) return true;
+      if (allowed.has(r.id)) return true;
     }
     return false;
   }
 
   /**
-   * Manual arm: bypass the allowlist gate for `durationMs` from now. Used by
-   * the Send Initial Prompt button and by `@lakeburner start` so the user
-   * can opt a chat in without the participant having to be re-pinged on
-   * every assistant turn.
+   * Register a session derived from a known prompt (used by Send Initial
+   * Prompt — the chat participant doesn't run for those, so we register on
+   * the dispatcher side using the prompt as the fingerprint seed). The
+   * resulting session ID will collide with the one the chat participant
+   * would compute if/when @lakeburner is later invoked in the same
+   * conversation, because both seed off the conversation's first user prompt.
+   */
+  public async registerExternal(promptText: string, label?: string): Promise<string> {
+    const id = AffectedChats.fingerprint(promptText);
+    const now = new Date().toISOString();
+    const all = this.readAll();
+    if (all[id]) {
+      all[id].lastSeenIso = now;
+      all[id].turns += 1;
+    } else {
+      all[id] = {
+        id,
+        label: shortLabel(label ?? promptText),
+        firstSeenIso: now,
+        lastSeenIso: now,
+        turns: 1,
+      };
+      this.logger.task({ fn: "registerExternal" }, "External Chat Session Tracked", { id, label: all[id].label });
+    }
+    await this.context.globalState.update(STATE_KEY, all);
+    const set = new Set(this.listAllowedIds());
+    if (!set.has(id)) {
+      set.add(id);
+      await this.context.globalState.update(ALLOWLIST_KEY, Array.from(set));
+      this.logger.user({ fn: "registerExternal" }, "Allowlisted External Session", { id });
+    }
+    this.emitter.fire();
+    return id;
+  }
+
+  /** Remove a session entirely — used by @lakeburner stop. */
+  public async removeSession(id: string): Promise<void> {
+    const all = this.readAll();
+    if (all[id]) {
+      delete all[id];
+      await this.context.globalState.update(STATE_KEY, all);
+    }
+    const set = new Set(this.listAllowedIds());
+    if (set.has(id)) {
+      set.delete(id);
+      await this.context.globalState.update(ALLOWLIST_KEY, Array.from(set));
+    }
+    this.logger.user({ fn: "removeSession" }, "Session Removed", { id });
+    this.emitter.fire();
+  }
+
+  /**
+   * Manual arm: kept for back-compat callers but no longer used by the
+   * default Auto-Run flow. Allowlist membership is the gate now.
    */
   public async arm(durationMs: number, reason: string): Promise<void> {
     const until = Date.now() + Math.max(0, durationMs);
     await this.context.globalState.update(ARM_KEY, until);
-    this.logger.user({ fn: "arm" }, "Auto-Run Manually Armed", { durationMs, reason, untilIso: new Date(until).toISOString() });
+    this.logger.user({ fn: "arm" }, "Auto-Run Manually Armed (legacy)", { durationMs, reason });
     this.emitter.fire();
   }
 

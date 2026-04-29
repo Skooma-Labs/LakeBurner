@@ -8,8 +8,6 @@ const PARTICIPANT_ID = "lakeburner.harness";
 
 type LakeBurnerCommand = "approve" | "context" | "advise" | "start" | "stop" | undefined;
 
-const DEFAULT_ARM_DURATION_MS = 30 * 60 * 1000; // 30 minutes
-
 /**
  * Registers the @lakeburner chat participant.
  *
@@ -75,7 +73,7 @@ export function registerLakeBurnerParticipant(
         return await handleContext(prompt, stream, activity, cfgSection, sessionId);
 
       case "start":
-        return await handleStart(stream, activity, affected, autoRun, cfgSection, sessionId);
+        return await handleStart(stream, activity, affected, autoRun, sessionId);
 
       case "stop":
         return await handleStop(stream, activity, affected, sessionId);
@@ -193,25 +191,23 @@ async function handleStart(
   activity: ActivityLog,
   affected: AffectedChats,
   autoRun: AutoRunMode,
-  cfgSection: string,
   sessionId: string
 ): Promise<vscode.ChatResult> {
-  const cfg = vscode.workspace.getConfiguration(cfgSection);
-  const durationMs = Math.max(1000, cfg.get<number>("autoRun.manualArmDurationMs", DEFAULT_ARM_DURATION_MS));
-  await affected.arm(durationMs, "@lakeburner start");
+  // Ensure the current session is allow-listed (auto-allow normally handles
+  // this on first turn, but `start` is the explicit opt-in either way).
+  await affected.setAllowed(sessionId, true);
 
-  const minutes = Math.round(durationMs / 60000);
   const autoRunNote = autoRun.isEnabled
-    ? "Auto-Run is **ON** — Allow / Keep dialogs in this window will be pressed automatically."
-    : "Auto-Run is currently **OFF** — turn it on in the LakeBurner sidebar to actually press anything.";
+    ? "Auto-Run is **ON** \u2014 Allow / Keep dialogs in this chat will be pressed automatically."
+    : "Auto-Run is currently **OFF** \u2014 turn it on in the LakeBurner sidebar to actually press anything.";
 
   stream.markdown(
-    `**LakeBurner — Auto-Run Armed**\n\n` +
-      `Bypassing the per-session allowlist for the next **${minutes} minute${minutes === 1 ? "" : "s"}**. ${autoRunNote}\n\n` +
-      `Send \`@lakeburner stop\` at any time to disarm.\n`
+    `**LakeBurner \u2014 Session Armed**\n\n` +
+      `This chat session is now in the **Affected Chats** list. ${autoRunNote}\n\n` +
+      `Send \`@lakeburner stop\` in this chat at any time to remove it.\n`
   );
-  activity.add("APPROVE", `Auto-Run armed via @lakeburner start (${minutes}m)`, { sessionId, durationMs });
-  return { metadata: { armed: true, durationMs, sessionId } };
+  activity.add("APPROVE", `Auto-Run armed via @lakeburner start`, { sessionId });
+  return { metadata: { armed: true, sessionId } };
 }
 
 async function handleStop(
@@ -220,8 +216,10 @@ async function handleStop(
   affected: AffectedChats,
   sessionId: string
 ): Promise<vscode.ChatResult> {
-  await affected.disarm("@lakeburner stop");
-  stream.markdown(`**LakeBurner — Auto-Run Disarmed**\n\nThe ticker will no longer press Allow / Keep until you arm it again or tick a chat in the sidebar.\n`);
+  await affected.removeSession(sessionId);
+  stream.markdown(
+    `**LakeBurner \u2014 Session Disarmed**\n\nRemoved from the Affected Chats list. Auto-Run will no longer press Allow / Keep on behalf of this chat.\n`
+  );
   activity.add("BLOCK", "Auto-Run disarmed via @lakeburner stop", { sessionId });
   return { metadata: { armed: false, sessionId } };
 }
