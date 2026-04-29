@@ -2,7 +2,7 @@
   "name": "lakeburner",
   "displayName": "LakeBurner",
   "description": "User-Approval Harness for AI coding assistants. Sits beside Copilot Chat, Claude Code, and Codex inside VS Code, monitors their presence, and gates risky actions through @lakeburner.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "JBLDotExe",
   "license": "MIT",
   "repository": {
@@ -52,8 +52,18 @@
         "category": "LakeBurner"
       },
       {
+        "command": "lakeburner.autoClick.allow",
+        "title": "LakeBurner: Press Chat \"Allow\" Button",
+        "category": "LakeBurner"
+      },
+      {
         "command": "lakeburner.autoClick.calibrate",
-        "title": "LakeBurner: Calibrate Auto-Click Position",
+        "title": "LakeBurner: Calibrate Keep Click Position",
+        "category": "LakeBurner"
+      },
+      {
+        "command": "lakeburner.autoClick.calibrateAllow",
+        "title": "LakeBurner: Calibrate Allow Click Position",
         "category": "LakeBurner"
       },
       {
@@ -204,7 +214,7 @@
         "lakeburner.autoClick.fallbackPosition": {
           "type": "object",
           "default": {},
-          "markdownDescription": "Captured screen coordinates `{ x, y }` for the OS-click fallback. Set this with the **LakeBurner: Calibrate Auto-Click Position** command.",
+          "markdownDescription": "Captured screen coordinates `{ x, y }` for the **Keep** OS-click fallback. Set this with the **LakeBurner: Calibrate Keep Click Position** command.",
           "properties": {
             "x": {
               "type": "number"
@@ -213,6 +223,36 @@
               "type": "number"
             }
           },
+          "scope": "application"
+        },
+        "lakeburner.autoApprove.commandIds": {
+          "type": "array",
+          "default": [],
+          "markdownDescription": "Ordered list of VS Code command IDs to invoke when pressing a chat tool-confirmation button (\"Allow Once\", \"Allow in this Session\", etc.). Leave empty to use the built-in defaults. Public commands for these dialogs are sparse — the coordinate fallback is usually required.",
+          "items": {
+            "type": "string"
+          },
+          "scope": "application"
+        },
+        "lakeburner.autoApprove.fallbackPosition": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "Captured screen coordinates `{ x, y }` for the **Allow** OS-click fallback. Set this with the **LakeBurner: Calibrate Allow Click Position** command.",
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            }
+          },
+          "scope": "application"
+        },
+        "lakeburner.autoRun.tickIntervalMs": {
+          "type": "number",
+          "default": 2500,
+          "minimum": 0,
+          "markdownDescription": "Polling interval (milliseconds) for the Auto-Run ticker. While Auto-Run is ON, LakeBurner silently attempts **Allow** then **Keep** on this cadence so chat sessions stay unattended. Set to `0` to disable the ticker (manual button presses still work).",
           "scope": "application"
         },
         "lakeburner.initialPrompt.default": {

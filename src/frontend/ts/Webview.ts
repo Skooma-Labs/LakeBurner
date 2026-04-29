@@ -31,7 +31,9 @@ type OutgoingMessage =
   | { type: "webview.ready" }
   | { type: "autoRun.toggle" }
   | { type: "autoClick.keep" }
+  | { type: "autoClick.allow" }
   | { type: "autoClick.calibrate" }
+  | { type: "autoClick.calibrateAllow" }
   | { type: "prompt.send"; targetId: string; prompt: string }
   | { type: "prompt.saveDefault"; prompt: string }
   | { type: "activity.clear" }
@@ -210,11 +212,27 @@ function bindButtons(): void {
     });
   }
 
+  const pressAllowBtn = el<HTMLButtonElement>("pressAllowBtn");
+  if (pressAllowBtn) {
+    pressAllowBtn.addEventListener("click", () => {
+      log.user("ui.autoClick.allow", "Press Allow Clicked");
+      postMessageToHost({ type: "autoClick.allow" });
+    });
+  }
+
   const calibrateBtn = el<HTMLButtonElement>("calibrateBtn");
   if (calibrateBtn) {
     calibrateBtn.addEventListener("click", () => {
-      log.user("ui.autoClick.calibrate", "Calibrate Clicked");
+      log.user("ui.autoClick.calibrate", "Calibrate Keep Clicked");
       postMessageToHost({ type: "autoClick.calibrate" });
+    });
+  }
+
+  const calibrateAllowBtn = el<HTMLButtonElement>("calibrateAllowBtn");
+  if (calibrateAllowBtn) {
+    calibrateAllowBtn.addEventListener("click", () => {
+      log.user("ui.autoClick.calibrateAllow", "Calibrate Allow Clicked");
+      postMessageToHost({ type: "autoClick.calibrateAllow" });
     });
   }
 

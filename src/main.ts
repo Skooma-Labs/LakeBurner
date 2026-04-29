@@ -7,6 +7,7 @@ import { ActivityLog } from "./backend/ActivityLog";
 import { AutoRunMode } from "./backend/AutoRunMode";
 import { registerLakeBurnerLmTools } from "./backend/LmTools";
 import { AutoClicker } from "./backend/AutoClicker";
+import { AutoRunTicker } from "./backend/AutoRunTicker";
 import { PromptDispatcher } from "./backend/PromptDispatcher";
 
 const CFG_SECTION = "lakeburner";
@@ -20,6 +21,8 @@ export function activate(context: vscode.ExtensionContext) {
   const autoRun = new AutoRunMode(context, logger);
   const autoClicker = new AutoClicker(CFG_SECTION, logger, activity, context);
   const dispatcher = new PromptDispatcher(CFG_SECTION, logger, activity);
+  const ticker = new AutoRunTicker(CFG_SECTION, logger, autoRun, autoClicker);
+  ticker.start(context);
 
   const provider = new WebviewHost(context, CFG_SECTION, logger, monitor, activity, autoRun, autoClicker, dispatcher);
 
@@ -55,6 +58,20 @@ export function activate(context: vscode.ExtensionContext) {
       }
     }),
     vscode.commands.registerCommand("lakeburner.autoClick.calibrate", () => autoClicker.calibrateFallbackPosition()),
+    vscode.commands.registerCommand("lakeburner.autoClick.allow", async () => {
+      const result = await autoClicker.pressAllow();
+      if (result.ok) {
+        vscode.window.setStatusBarMessage(
+          `LakeBurner: Allow pressed via ${result.via}${result.commandId ? ` (${result.commandId})` : ""}`,
+          3000
+        );
+      } else {
+        vscode.window.showWarningMessage(
+          "LakeBurner: no Allow command succeeded and the coordinate fallback is unavailable. See Output \u2192 LakeBurner."
+        );
+      }
+    }),
+    vscode.commands.registerCommand("lakeburner.autoClick.calibrateAllow", () => autoClicker.calibrateAllowPosition()),
     vscode.commands.registerCommand("lakeburner.sendInitialPrompt", async (arg?: { targetId?: string; prompt?: string }) => {
       const targets = dispatcher.listTargets();
       let targetId = arg?.targetId;

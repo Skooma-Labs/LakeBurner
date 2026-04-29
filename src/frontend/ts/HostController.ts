@@ -12,7 +12,9 @@ type IncomingFromWebview =
   | { type: "webview.ready" }
   | { type: "autoRun.toggle" }
   | { type: "autoClick.keep" }
+  | { type: "autoClick.allow" }
   | { type: "autoClick.calibrate" }
+  | { type: "autoClick.calibrateAllow" }
   | { type: "prompt.send"; targetId: string; prompt: string }
   | { type: "prompt.saveDefault"; prompt: string }
   | { type: "activity.clear" }
@@ -128,9 +130,26 @@ export class WebviewHost implements vscode.WebviewViewProvider {
             return;
           }
 
+          case "autoClick.allow": {
+            this.logger.user({ fn: "onDidReceiveMessage" }, "Press Allow Clicked");
+            const result = await this.autoClicker.pressAllow();
+            if (!result.ok) {
+              vscode.window.showWarningMessage(
+                "LakeBurner: no Allow command succeeded and the coordinate fallback is unavailable. See Output → LakeBurner."
+              );
+            }
+            return;
+          }
+
           case "autoClick.calibrate": {
-            this.logger.user({ fn: "onDidReceiveMessage" }, "Calibrate Clicked");
+            this.logger.user({ fn: "onDidReceiveMessage" }, "Calibrate Keep Clicked");
             await this.autoClicker.calibrateFallbackPosition();
+            return;
+          }
+
+          case "autoClick.calibrateAllow": {
+            this.logger.user({ fn: "onDidReceiveMessage" }, "Calibrate Allow Clicked");
+            await this.autoClicker.calibrateAllowPosition();
             return;
           }
 
@@ -240,9 +259,17 @@ export class WebviewHost implements vscode.WebviewViewProvider {
               title="Try to press Copilot's Keep button via VS Code commands; falls back to a calibrated OS click if enabled.">
         Press &ldquo;Keep&rdquo;
       </button>
+      <button id="pressAllowBtn" class="btn" type="button"
+              title="Try to press a chat tool-confirmation button (Allow Once / Allow in this Session); falls back to a calibrated OS click if enabled.">
+        Press &ldquo;Allow&rdquo;
+      </button>
       <button id="calibrateBtn" class="btnSmall" type="button"
               title="Capture mouse position over Copilot's Keep button for the OS-click fallback.">
-        Calibrate Click Position
+        Calibrate Keep Position
+      </button>
+      <button id="calibrateAllowBtn" class="btnSmall" type="button"
+              title="Capture mouse position over the Allow button for the OS-click fallback.">
+        Calibrate Allow Position
       </button>
     </div>
   </section>
