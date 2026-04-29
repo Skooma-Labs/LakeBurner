@@ -13,6 +13,6 @@
     "forceConsistentCasingInFileNames": true,
     "sourceMap": true
   },
-  "include": ["src/main.ts", "src/frontend/**/*.ts"],
+  "include": ["src/main.ts", "src/backend/**/*.ts", "src/frontend/**/*.ts"],
   "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }

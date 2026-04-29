@@ -13,7 +13,7 @@ export type LogSource = {
 };
 
 export type HostLogEnvelope = {
-  type: "vscplate.hostlog";
+  type: "lakeburner.hostlog";
   kind: LogKind;
   file: string;
   fn: string;
@@ -283,7 +283,7 @@ export function createWebviewLogger(opts: {
     else rawConsole.info(line);
 
     try {
-      opts.postMessage({ type: "vscplate.hostlog", kind, file, fn, message, data });
+      opts.postMessage({ type: "lakeburner.hostlog", kind, file, fn, message, data });
     } catch {}
   }
 

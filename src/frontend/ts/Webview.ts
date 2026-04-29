@@ -1,35 +1,34 @@
-import { createWebviewLogger, type DebugLevel } from "./TSLogger";
+import { createWebviewLogger } from "./TSLogger";
 
-type AppMode = "Mode_01" | "Mode_02";
+type ProviderInfo = {
+  id: string;
+  label: string;
+  installed: boolean;
+  active: boolean;
+  version?: string;
+};
 
-type SettingsPayload = {
-  url: string;
-  name: string;
-  folder: string;
-  debugLevel: DebugLevel;
+type ActivityKind = "REQUEST" | "APPROVE" | "BLOCK" | "INFO";
+
+type ActivityEntry = {
+  id: number;
+  tsIso: string;
+  kind: ActivityKind;
+  message: string;
+  data?: unknown;
 };
 
 type IncomingMessage =
-  | { type: "vscplate.settings"; settings: SettingsPayload }
-  | { type: "pickFolder.result"; path: string }
-  | { type: "vscplate.apiToken.status.result"; hasToken: boolean }
-  | { type: "vscplate.apiToken.set.result"; ok: boolean; reason?: string }
-  | { type: "vscplate.apiToken.clear.result"; ok: boolean; reason?: string }
-  | { type: "vscplate.error"; ok: false; reason: string }
-  | { type: "changeMode"; mode: AppMode };
+  | { type: "lakeburner.providers"; providers: ProviderInfo[] }
+  | { type: "lakeburner.activity"; entries: ActivityEntry[] }
+  | { type: "lakeburner.error"; reason: string };
 
 type OutgoingMessage =
   | { type: "webview.ready" }
-  | { type: "pickFolder" }
-  | { type: "saveSettings"; url: string; name: string; folder: string }
-  | { type: "vscplate.ui.connectionSettings.toggle"; isOpen: boolean }
-  | { type: "changeMode"; mode: AppMode }
-  | { type: "function01" | "function02" | "function03" }
-  | { type: "vscplate.apiToken.set"; token: string }
-  | { type: "vscplate.apiToken.clear" }
-  | { type: "vscplate.apiToken.status" }
+  | { type: "function01" }
+  | { type: "activity.clear" }
   | {
-      type: "vscplate.hostlog";
+      type: "lakeburner.hostlog";
       kind: "TASK" | "USER" | "INFO" | "WARN" | "ERROR";
       file: string;
       fn: string;
@@ -47,318 +46,166 @@ const vscodeApi = acquireVsCodeApi();
 
 const log = createWebviewLogger({
   fileName: "Webview.ts",
-  postMessage: (msg: OutgoingMessage) => vscodeApi.postMessage(msg),
+  postMessage: (msg) => vscodeApi.postMessage(msg as OutgoingMessage),
 });
 
 function postMessageToHost(message: OutgoingMessage): void {
   try {
     vscodeApi.postMessage(message);
   } catch (err: unknown) {
-    const reason = err instanceof Error ? err.message : String(err);
-    log.error("postMessageToHost", "'postMessage' Failed", { reason, type: message.type });
+    log.error("postMessageToHost", "'postMessage' Failed", {
+      reason: err instanceof Error ? err.message : String(err),
+      type: message.type,
+    });
   }
 }
 
-function elementById<T extends HTMLElement>(id: string): T | null {
+function el<T extends HTMLElement>(id: string): T | null {
   return document.getElementById(id) as T | null;
 }
 
-function requireElement<T extends HTMLElement>(id: string, purpose: string): T | null {
-  const el = elementById<T>(id);
-  if (!el) log.warn("bind", "Missing Element", { id, purpose });
-  return el;
-}
+function renderProviders(providers: ProviderInfo[]): void {
+  const root = el<HTMLDivElement>("provider-list");
+  if (!root) return;
 
-function setButtonPressed(button: HTMLButtonElement, pressed: boolean): void {
-  button.classList.toggle("is-active", pressed);
-  button.setAttribute("aria-pressed", pressed ? "true" : "false");
-}
+  root.innerHTML = "";
 
-function isDebugLevel(v: unknown): v is DebugLevel {
-  return v === "Silent" || v === "Basic" || v === "Loud";
-}
-
-function getPersistedMode(): AppMode {
-  const state = vscodeApi.getState() as { mode?: unknown } | null;
-  return state?.mode === "Mode_02" ? "Mode_02" : "Mode_01";
-}
-
-function setPersistedMode(mode: AppMode): void {
-  const state = (vscodeApi.getState() as Record<string, unknown> | null) ?? {};
-  vscodeApi.setState({ ...state, mode });
-}
-
-function getPersistedSettings(): SettingsPayload | null {
-  try {
-    const state = vscodeApi.getState();
-    if (!state || typeof state !== "object") return null;
-
-    const settingsAny = (state as any).settings;
-    if (!settingsAny || typeof settingsAny !== "object") return null;
-
-    const url = typeof settingsAny.url === "string" ? settingsAny.url : "";
-    const name = typeof settingsAny.name === "string" ? settingsAny.name : "";
-    const folder = typeof settingsAny.folder === "string" ? settingsAny.folder : "";
-
-    const debugLevel = isDebugLevel(settingsAny.debugLevel) ? settingsAny.debugLevel : "Silent";
-
-    return { url, name, folder, debugLevel };
-  } catch (err: unknown) {
-    log.warn("state.restore", "Failed to Restore Cached Settings", {
-      reason: err instanceof Error ? err.message : String(err),
-    });
-    return null;
-  }
-}
-
-function setPersistedSettings(settings: SettingsPayload): void {
-  const state = (vscodeApi.getState() as Record<string, unknown> | null) ?? {};
-  vscodeApi.setState({ ...state, settings });
-}
-
-function applyModeUi(mode: AppMode): void {
-  const oneBtn = elementById<HTMLButtonElement>("modeOneBtn");
-  const twoBtn = elementById<HTMLButtonElement>("modeTwoBtn");
-  if (!oneBtn || !twoBtn) return;
-
-  setButtonPressed(oneBtn, mode === "Mode_01");
-  setButtonPressed(twoBtn, mode === "Mode_02");
-}
-
-function validateSettingsInputs(): { ok: true } | { ok: false; reason: string } {
-  const urlValue = (elementById<HTMLInputElement>("settingUrl")?.value ?? "").trim();
-  const nameValue = (elementById<HTMLInputElement>("settingName")?.value ?? "").trim();
-
-  if (!urlValue) return { ok: false, reason: "URL is required." };
-  if (!nameValue) return { ok: false, reason: "Name is required." };
-
-  return { ok: true };
-}
-
-function applySettings(settings: SettingsPayload): void {
-  const urlInput = elementById<HTMLInputElement>("settingUrl");
-  const nameInput = elementById<HTMLInputElement>("settingName");
-  const folderInput = elementById<HTMLInputElement>("settingFolder");
-
-  if (urlInput) urlInput.value = settings.url ?? "";
-  if (nameInput) nameInput.value = settings.name ?? "";
-  if (folderInput) folderInput.value = settings.folder ?? "";
-}
-
-function readTokenInput(): string {
-  return (elementById<HTMLInputElement>("apiToken")?.value ?? "").trim();
-}
-
-function clearTokenInput(): void {
-  const el = elementById<HTMLInputElement>("apiToken");
-  if (el) el.value = "";
-}
-
-function bindConnectionSettingsToggle(): void {
-  const root = requireElement<HTMLDivElement>("connection-settings", "collapse root");
-  const toggle = requireElement<HTMLDivElement>("connection-settings-toggle", "collapse toggle");
-  if (!root || !toggle) return;
-
-  const readIsOpen = () => !root.classList.contains("collapsed");
-
-  toggle.addEventListener("click", () => {
-    const wasOpen = readIsOpen();
-
-    root.classList.toggle("collapsed");
-
-    const isOpen = readIsOpen();
-    const collapsed = !isOpen;
-
-    log.info("ui.connectionSettings.toggle", isOpen ? "Connection-Settings Expanded" : "Connection-Settings Closed", {
-      wasOpen,
-      isOpen,
-      collapsed,
-    });
-
-    postMessageToHost({ type: "vscplate.ui.connectionSettings.toggle", isOpen });
-  });
-}
-
-function bindPickFolderButton(): void {
-  const btn = requireElement<HTMLButtonElement>("pickFolder", "Pick Folder Button");
-  if (!btn) return;
-
-  btn.addEventListener("click", () => {
-    log.info("ui.pickFolder.click", "'Open' Folder Navigator Button Clicked'");
-    postMessageToHost({ type: "pickFolder" });
-  });
-}
-
-function bindSaveSettingsButton(): void {
-  const btn = requireElement<HTMLButtonElement>("saveSettings", "Save Settings Button");
-  if (!btn) return;
-
-  btn.addEventListener("click", () => {
-    const urlValue = (elementById<HTMLInputElement>("settingUrl")?.value ?? "").trim();
-    const nameValue = (elementById<HTMLInputElement>("settingName")?.value ?? "").trim();
-    const folderValue = (elementById<HTMLInputElement>("settingFolder")?.value ?? "").trim();
-    const tokenValue = readTokenInput();
-
-    const validation = validateSettingsInputs();
-    if (!validation.ok) {
-      log.warn("settings.validate", validation.reason, {
-        missingUrl: !urlValue,
-        missingName: !nameValue,
-      });
-      return;
-    }
-
-    log.info("ui.settings.save", "Settings Save Clicked", {
-      hasToken: tokenValue.length > 0,
-      hasFolder: folderValue.length > 0,
-    });
-
-    if (tokenValue.length > 0) {
-      postMessageToHost({ type: "vscplate.apiToken.set", token: tokenValue });
-      clearTokenInput();
-    }
-
-    postMessageToHost({
-      type: "saveSettings",
-      url: urlValue,
-      name: nameValue,
-      folder: folderValue,
-    });
-
-    postMessageToHost({ type: "vscplate.apiToken.status" });
-  });
-}
-
-function emitChangeMode(mode: AppMode, reason: "click" | "restore" | "host"): void {
-  setPersistedMode(mode);
-  applyModeUi(mode);
-
-  log.info("ui.mode.change", `Mode toggled to ${mode}`, { mode, reason });
-  postMessageToHost({ type: "changeMode", mode });
-}
-
-function bindModeToggleButtons(): void {
-  const oneBtn = requireElement<HTMLButtonElement>("modeOneBtn", "Mode_01 toggle");
-  const twoBtn = requireElement<HTMLButtonElement>("modeTwoBtn", "Mode_02 toggle");
-  if (!oneBtn || !twoBtn) return;
-
-  oneBtn.addEventListener("click", () => emitChangeMode("Mode_01", "click"));
-  twoBtn.addEventListener("click", () => emitChangeMode("Mode_02", "click"));
-}
-
-function bindTaskButtons(): void {
-  const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-action]"));
-
-  if (buttons.length === 0) {
-    log.warn("bind", "No Task Buttons Found");
+  if (providers.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "activity-empty";
+    empty.textContent = "No providers configured.";
+    root.appendChild(empty);
     return;
   }
 
-  for (const btn of buttons) {
-    const actionType = (btn.getAttribute("data-action") ?? "").trim();
+  for (const p of providers) {
+    const card = document.createElement("div");
+    card.className = "provider";
+    if (p.installed) card.classList.add("is-installed");
+    if (p.active) card.classList.add("is-active");
 
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    card.appendChild(dot);
+
+    const meta = document.createElement("div");
+    meta.className = "meta";
+
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = p.label;
+    meta.appendChild(name);
+
+    const sub = document.createElement("span");
+    sub.className = "sub";
+    sub.textContent = p.installed
+      ? `${p.id}${p.version ? ` · v${p.version}` : ""}`
+      : `${p.id} · not installed`;
+    meta.appendChild(sub);
+
+    card.appendChild(meta);
+
+    const badge = document.createElement("span");
+    badge.className = "badge";
+    badge.textContent = p.active ? "active" : p.installed ? "idle" : "missing";
+    card.appendChild(badge);
+
+    root.appendChild(card);
+  }
+}
+
+function renderActivity(entries: ActivityEntry[]): void {
+  const root = el<HTMLDivElement>("activity-log");
+  if (!root) return;
+
+  root.innerHTML = "";
+
+  if (entries.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "activity-empty";
+    empty.textContent = "No activity yet. Try `@lakeburner advise <plan>` in Copilot Chat.";
+    root.appendChild(empty);
+    return;
+  }
+
+  // Newest first
+  const sorted = entries.slice().sort((a, b) => b.id - a.id);
+
+  for (const entry of sorted) {
+    const item = document.createElement("div");
+    item.className = "activity-item";
+
+    const ts = document.createElement("span");
+    ts.className = "ts";
+    ts.textContent = entry.tsIso.slice(11, 19);
+    item.appendChild(ts);
+
+    const kind = document.createElement("span");
+    kind.className = `kind ${entry.kind}`;
+    kind.textContent = entry.kind;
+    item.appendChild(kind);
+
+    const msg = document.createElement("span");
+    msg.className = "msg";
+    msg.textContent = entry.message;
+    item.appendChild(msg);
+
+    root.appendChild(item);
+  }
+}
+
+function bindButtons(): void {
+  document.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((btn) => {
+    const action = btn.getAttribute("data-action");
     btn.addEventListener("click", () => {
-      if (actionType === "function01" || actionType === "function02" || actionType === "function03") {
-        log.info("ui.task.click", "Task Clicked", { task: actionType });
-        postMessageToHost({ type: actionType });
-        return;
+      if (action === "function01") {
+        log.user("ui.task.click", "Function_01 Clicked");
+        postMessageToHost({ type: "function01" });
       }
+    });
+  });
 
-      log.warn("ui.task.click", "Unknown Action", { action: actionType });
+  const clearBtn = el<HTMLButtonElement>("clearActivityBtn");
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      log.user("ui.activity.clear", "Activity Clear Clicked");
+      postMessageToHost({ type: "activity.clear" });
     });
   }
 }
 
-function handleIncomingMessage(message: IncomingMessage): void {
-  if (!message || typeof (message as any).type !== "string") return;
+function handleIncoming(message: IncomingMessage): void {
+  if (!message || typeof (message as { type?: unknown }).type !== "string") return;
 
   switch (message.type) {
-    case "vscplate.settings": {
-      const settings = message.settings ?? ({} as SettingsPayload);
-
-      const nextLevel = isDebugLevel(settings.debugLevel) ? settings.debugLevel : "Basic";
-      log.setLevel(nextLevel);
-
-      log.installConsoleForwarding();
-
-      applySettings(settings);
-      setPersistedSettings(settings);
-
-      const validation = validateSettingsInputs();
-      if (!validation.ok) log.warn("settings.validate", validation.reason);
-
-      log.info("settings.sync", "Settings Applied", {
-        fields: ["url", "name", "folder", "debugLevel"],
-      });
-
+    case "lakeburner.providers":
+      renderProviders(message.providers ?? []);
       return;
-    }
-
-    case "pickFolder.result": {
-      const input = elementById<HTMLInputElement>("settingFolder");
-      if (input) input.value = message.path;
-
-      log.info("ui.pickFolder.result", "Folder Selected", { hasPath: !!message.path });
+    case "lakeburner.activity":
+      renderActivity(message.entries ?? []);
       return;
-    }
-
-    case "changeMode": {
-      emitChangeMode(message.mode, "host");
-      return;
-    }
-
-    case "vscplate.apiToken.status.result":
-    case "vscplate.apiToken.set.result":
-    case "vscplate.apiToken.clear.result":
-      return;
-
-    case "vscplate.error":
+    case "lakeburner.error":
       log.error("host", message.reason);
-      return;
-
-    default:
       return;
   }
 }
 
 function main(): void {
-  log.info("boot", "Webview boot");
-
-  bindConnectionSettingsToggle();
-  bindPickFolderButton();
-  bindSaveSettingsButton();
-  bindModeToggleButtons();
-  bindTaskButtons();
-
-  applyModeUi(getPersistedMode());
+  log.setLevel("Basic");
+  bindButtons();
 
   window.addEventListener("message", (event: MessageEvent) => {
     try {
-      handleIncomingMessage(event.data as IncomingMessage);
+      handleIncoming(event.data as IncomingMessage);
     } catch (err: unknown) {
-      const reason = err instanceof Error ? err.message : String(err);
-      log.error("message", "Unhandled Exception in Message Handler", { reason });
+      log.error("message", "Unhandled Exception in Message Handler", {
+        reason: err instanceof Error ? err.message : String(err),
+      });
     }
   });
 
   postMessageToHost({ type: "webview.ready" });
   log.info("boot", "'webview.ready' Posted");
-
-  const cached = getPersistedSettings();
-  if (cached) {
-    applySettings(cached);
-
-    const nextLevel = isDebugLevel(cached.debugLevel) ? cached.debugLevel : "Basic";
-    log.setLevel(nextLevel);
-
-    log.installConsoleForwarding();
-
-    log.info("state.restore", "Cached Settings Restored", {
-      fields: ["url", "name", "folder", "debugLevel"],
-    });
-  }
-
-  applyModeUi(getPersistedMode());
 }
 
 if (document.readyState === "loading") {

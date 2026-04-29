@@ -1,36 +1,33 @@
 import * as vscode from "vscode";
 import { WebviewHost } from "./frontend/ts/HostController";
 import { Logger } from "./frontend/ts/TSLogger";
+import { ProviderMonitor } from "./backend/ProviderMonitor";
+import { registerLakeBurnerParticipant } from "./backend/ChatParticipant";
+import { ActivityLog } from "./backend/ActivityLog";
 
-const MODE_KEY = "vscplate.currentMode";
-const CFG_SECTION = "vscplate";
+const CFG_SECTION = "lakeburner";
 
 export function activate(context: vscode.ExtensionContext) {
-  const logger = Logger.create(context, "VscPlate", CFG_SECTION, "main.ts");
+  const logger = Logger.create(context, "LakeBurner", CFG_SECTION, "main.ts");
 
   logger.info({ fn: "activate" }, "Extension Activation Started", { debugLevel: logger.getLevel() });
-  logger.show(true);
 
-  const output = logger.getOutputChannel();
+  const activity = new ActivityLog(logger);
+  const monitor = new ProviderMonitor(logger, CFG_SECTION);
+  const provider = new WebviewHost(context, CFG_SECTION, logger, monitor, activity);
 
-  const provider = new WebviewHost(context, output, CFG_SECTION, logger);
-  logger.info({ fn: "activate" }, "HostController initialized");
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider("lakeburner-view", provider, {
+      webviewOptions: { retainContextWhenHidden: true },
+    })
+  );
 
-  const webviewDisposable = vscode.window.registerWebviewViewProvider("vscplate-view", provider, {
-    webviewOptions: { retainContextWhenHidden: true },
-  });
+  monitor.start(context, () => provider.broadcastProviders());
+  context.subscriptions.push(activity.onChange(() => provider.broadcastActivity()));
 
-  context.subscriptions.push(webviewDisposable);
-  logger.info({ fn: "activate" }, "Webview Provider Registered", { viewId: "vscplate-view" });
+  registerLakeBurnerParticipant(context, logger, activity, CFG_SECTION);
 
-  const priorMode = context.globalState.get(MODE_KEY);
-
-  if (!priorMode) {
-    void context.globalState.update(MODE_KEY, "Mode_01");
-    logger.info({ fn: "activate" }, "Default Mode Initialized", { modeKey: MODE_KEY, mode: "Mode_01" });
-  } else {
-    logger.info({ fn: "activate" }, "Existing Mode Found", { modeKey: MODE_KEY, mode: priorMode });
-  }
+  logger.info({ fn: "activate" }, "LakeBurner Ready");
 }
 
 export function deactivate() {}

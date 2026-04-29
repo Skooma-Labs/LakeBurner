@@ -1,91 +1,96 @@
 {
-  "name": "vscplate",
-  "displayName": "VscPlate",
-  "description": "A VS Code extension template with a webview sidebar and structured logging.",
+  "name": "lakeburner",
+  "displayName": "LakeBurner",
+  "description": "User-Approval Harness for AI coding assistants. Sits beside Copilot Chat, Claude Code, and Codex inside VS Code, monitors their presence, and gates risky actions through @lakeburner.",
   "version": "0.1.0",
-  "publisher": "YourPublisher",
+  "publisher": "JBLDotExe",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/you/vscplate"
+    "url": "https://github.com/JBLDotExe/LakeBurner"
   },
   "bugs": {
-    "url": "https://github.com/you/vscplate/issues"
+    "url": "https://github.com/JBLDotExe/LakeBurner/issues"
   },
-  "homepage": "https://github.com/you/vscplate#readme",
+  "homepage": "https://github.com/JBLDotExe/LakeBurner#readme",
   "keywords": [
     "vscode",
     "extension",
-    "template",
-    "webview"
+    "copilot",
+    "claude",
+    "codex",
+    "chat",
+    "ai",
+    "approval",
+    "harness"
   ],
   "categories": [
+    "AI",
+    "Chat",
     "Other"
   ],
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.95.0"
   },
   "icon": "resources/flame-icon.png",
   "main": "./dist/main.js",
+  "activationEvents": [
+    "onChatParticipant:lakeburner.harness"
+  ],
   "contributes": {
     "commands": [
       {
-        "command": "vscplate.function01",
-        "title": "VscPlate: Function_01",
-        "category": "VscPlate"
-      },
-      {
-        "command": "vscplate.function02",
-        "title": "VscPlate: Function_02",
-        "category": "VscPlate"
-      },
-      {
-        "command": "vscplate.function03",
-        "title": "VscPlate: Function_03",
-        "category": "VscPlate"
+        "command": "lakeburner.function01",
+        "title": "LakeBurner: Function_01",
+        "category": "LakeBurner"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "vscplate-container",
-          "title": "VscPlate",
+          "id": "lakeburner-container",
+          "title": "LakeBurner",
           "icon": "resources/flame-icon.svg"
         }
       ]
     },
     "views": {
-      "vscplate-container": [
+      "lakeburner-container": [
         {
-          "id": "vscplate-view",
+          "id": "lakeburner-view",
           "name": "",
           "icon": "resources/flame-icon.svg",
           "type": "webview"
         }
       ]
     },
+    "chatParticipants": [
+      {
+        "id": "lakeburner.harness",
+        "name": "lakeburner",
+        "fullName": "LakeBurner",
+        "description": "User-Approval Harness for AI coding assistants.",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "approve",
+            "description": "Request user approval for a proposed action. Defaults to the safest direction on cancel."
+          },
+          {
+            "name": "context",
+            "description": "Return local workspace context that an AI assistant can use to ground its next step."
+          },
+          {
+            "name": "advise",
+            "description": "Recommend the safest direction for a proposed plan."
+          }
+        ]
+      }
+    ],
     "configuration": {
-      "title": "VscPlate",
+      "title": "LakeBurner",
       "properties": {
-        "vscplate.url": {
-          "type": "string",
-          "default": "",
-          "description": "Service URL (e.g., https://your-service.example.com/).",
-          "scope": "application"
-        },
-        "vscplate.name": {
-          "type": "string",
-          "default": "",
-          "description": "Project or resource name.",
-          "scope": "application"
-        },
-        "vscplate.folder": {
-          "type": "string",
-          "default": "",
-          "description": "Local folder used by the extension for reading and writing files.",
-          "scope": "application"
-        },
-        "vscplate.debugLevel": {
+        "lakeburner.debugLevel": {
           "type": "string",
           "default": "Basic",
           "enum": [
@@ -94,12 +99,39 @@
             "Loud"
           ],
           "enumDescriptions": [
-            "No Diagnostic Output Whatsoever.",
-            "User Options, Settings Changes, and Task Progress Only.",
-            "Full Verbose Diagnostics. The Kitchen Sink."
+            "No diagnostic output whatsoever.",
+            "User options, settings changes, and task progress only.",
+            "Full verbose diagnostics. The kitchen sink."
           ],
-          "description": "The level of Verbosity Expected from VscPlate in your Console Output.",
+          "description": "Verbosity for the LakeBurner output channel.",
           "scope": "application"
+        },
+        "lakeburner.providers": {
+          "type": "array",
+          "default": [],
+          "markdownDescription": "Override the watched AI provider extension IDs. Leave empty to use the built-in defaults (`GitHub.copilot-chat`, `anthropic.claude-code`, `openai.chatgpt`). Each entry may be a string ID or `{ \"id\": \"...\", \"label\": \"...\" }`.",
+          "scope": "application",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          }
         }
       }
     }
@@ -114,7 +146,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.19.3",
-    "@types/vscode": "^1.85.0",
+    "@types/vscode": "^1.118.0",
     "esbuild": "^0.25.12",
     "typescript": "^5.0.0"
   }

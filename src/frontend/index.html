@@ -13,97 +13,30 @@
       "
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-    <!-- Webview CSS -->
     <link rel="stylesheet" href="{{cssUri}}" />
-
-    <title>VscPlate Extension</title>
+    <title>LakeBurner</title>
   </head>
-
   <body>
-    <h1>TASKS</h1>
+    <section class="section">
+      <h2 class="section-title">AI Providers</h2>
+      <div id="provider-list" class="provider-list"></div>
+    </section>
 
-    <!-- Mode Toggle -->
-    <div class="mode-toggle" role="group" aria-label="Select Mode">
-      <button id="modeOneBtn" class="mode-btn is-active" type="button" aria-pressed="true">
-        Mode_01
-      </button>
-      <button id="modeTwoBtn" class="mode-btn" type="button" aria-pressed="false">
-        Mode_02
-      </button>
-    </div>
-
-    <!-- Task Buttons -->
-    <div class="stack">
-      <button class="btn" type="button" data-action="function01">Function_01</button>
-      <button class="btn" type="button" data-action="function02">Function_02</button>
-      <button class="btn" type="button" data-action="function03">Function_03</button>
-    </div>
-
-    <!-- Connection Settings (Collapsible Section) -->
-    <div class="collapsible collapsed" id="connection-settings">
-      <div class="collapsible-header" id="connection-settings-toggle">
-        <span class="arrow" id="connection-settings-arrow">▸</span>
-        <span class="title">Connection Settings</span>
+    <section class="section">
+      <h2 class="section-title">Tasks</h2>
+      <div class="stack">
+        <button class="btn" type="button" data-action="function01">Function_01</button>
       </div>
+    </section>
 
-      <div class="collapsible-body">
-        <div class="panel">
-          <div class="form">
-            <div class="field">
-              <label for="apiToken">API Token</label>
-              <input
-                id="apiToken"
-                type="password"
-                autocomplete="off"
-                spellcheck="false"
-                placeholder="Personal Access Token"
-              />
-            </div>
-
-            <div class="field">
-              <label for="settingUrl">URL</label>
-              <input
-                id="settingUrl"
-                type="text"
-                autocomplete="off"
-                spellcheck="false"
-                placeholder="https://your-service.example.com/"
-              />
-            </div>
-
-            <div class="field">
-              <label for="settingName">Name</label>
-              <input
-                id="settingName"
-                type="text"
-                autocomplete="off"
-                spellcheck="false"
-                placeholder="My Project"
-              />
-            </div>
-
-            <div class="field">
-              <label for="settingFolder">Set Folder</label>
-              <div class="row">
-                <input id="settingFolder" type="text" spellcheck="false" />
-                <button class="btnSmall" id="pickFolder" type="button" aria-label="Open Folder Picker">
-                  Open
-                </button>
-              </div>
-            </div>
-
-            <div class="row">
-              <button class="btnSmall" id="saveSettings" type="button" aria-label="Save Settings">
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
+    <section class="section">
+      <div class="section-head">
+        <h2 class="section-title">Activity</h2>
+        <button id="clearActivityBtn" class="btnSmall" type="button">Clear</button>
       </div>
-    </div>
+      <div id="activity-log" class="activity-log" aria-live="polite"></div>
+    </section>
 
-    <!-- Webview Script -->
     <script nonce="{{nonce}}" src="{{jsUri}}"></script>
   </body>
 </html>
