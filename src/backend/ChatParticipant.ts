@@ -6,7 +6,9 @@ import type { AffectedChats } from "./AffectedChats";
 
 const PARTICIPANT_ID = "lakeburner.harness";
 
-type LakeBurnerCommand = "approve" | "context" | "advise" | undefined;
+type LakeBurnerCommand = "approve" | "context" | "advise" | "start" | "stop" | undefined;
+
+const DEFAULT_ARM_DURATION_MS = 30 * 60 * 1000; // 30 minutes
 
 /**
  * Registers the @lakeburner chat participant.
@@ -32,8 +34,18 @@ export function registerLakeBurnerParticipant(
   }
 
   const handler: vscode.ChatRequestHandler = async (request, ctx, stream, token) => {
-    const command = (request.command as LakeBurnerCommand) ?? undefined;
+    let command = (request.command as LakeBurnerCommand) ?? undefined;
     const prompt = (request.prompt ?? "").trim();
+
+    // Allow bare "start" / "stop" (case-insensitive) as the prompt to mean
+    // the same thing as the /start /stop subcommands. Lets the user type
+    // "@lakeburner start" naturally without selecting a subcommand pill.
+    if (!command) {
+      const firstWord = prompt.split(/\s+/)[0]?.toLowerCase();
+      if (firstWord === "start" || firstWord === "stop") {
+        command = firstWord;
+      }
+    }
 
     // Find the conversation's first user prompt (used for stable session ID).
     let firstPrompt = prompt;
@@ -61,6 +73,12 @@ export function registerLakeBurnerParticipant(
 
       case "context":
         return await handleContext(prompt, stream, activity, cfgSection, sessionId);
+
+      case "start":
+        return await handleStart(stream, activity, affected, autoRun, cfgSection, sessionId);
+
+      case "stop":
+        return await handleStop(stream, activity, affected, sessionId);
 
       case "advise":
       default:
@@ -168,4 +186,42 @@ async function handleAdvise(
 
   activity.add("INFO", `Advice issued for plan: ${plan}`, { sessionId });
   return { metadata: { plan, sessionId } };
+}
+
+async function handleStart(
+  stream: vscode.ChatResponseStream,
+  activity: ActivityLog,
+  affected: AffectedChats,
+  autoRun: AutoRunMode,
+  cfgSection: string,
+  sessionId: string
+): Promise<vscode.ChatResult> {
+  const cfg = vscode.workspace.getConfiguration(cfgSection);
+  const durationMs = Math.max(1000, cfg.get<number>("autoRun.manualArmDurationMs", DEFAULT_ARM_DURATION_MS));
+  await affected.arm(durationMs, "@lakeburner start");
+
+  const minutes = Math.round(durationMs / 60000);
+  const autoRunNote = autoRun.isEnabled
+    ? "Auto-Run is **ON** — Allow / Keep dialogs in this window will be pressed automatically."
+    : "Auto-Run is currently **OFF** — turn it on in the LakeBurner sidebar to actually press anything.";
+
+  stream.markdown(
+    `**LakeBurner — Auto-Run Armed**\n\n` +
+      `Bypassing the per-session allowlist for the next **${minutes} minute${minutes === 1 ? "" : "s"}**. ${autoRunNote}\n\n` +
+      `Send \`@lakeburner stop\` at any time to disarm.\n`
+  );
+  activity.add("APPROVE", `Auto-Run armed via @lakeburner start (${minutes}m)`, { sessionId, durationMs });
+  return { metadata: { armed: true, durationMs, sessionId } };
+}
+
+async function handleStop(
+  stream: vscode.ChatResponseStream,
+  activity: ActivityLog,
+  affected: AffectedChats,
+  sessionId: string
+): Promise<vscode.ChatResult> {
+  await affected.disarm("@lakeburner stop");
+  stream.markdown(`**LakeBurner — Auto-Run Disarmed**\n\nThe ticker will no longer press Allow / Keep until you arm it again or tick a chat in the sidebar.\n`);
+  activity.add("BLOCK", "Auto-Run disarmed via @lakeburner stop", { sessionId });
+  return { metadata: { armed: false, sessionId } };
 }

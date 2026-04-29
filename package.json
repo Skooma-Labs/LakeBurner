@@ -2,7 +2,7 @@
   "name": "lakeburner",
   "displayName": "LakeBurner",
   "description": "User-Approval Harness for AI coding assistants. Sits beside Copilot Chat, Claude Code, and Codex inside VS Code, monitors their presence, and gates risky actions through @lakeburner.",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "publisher": "JBLDotExe",
   "license": "MIT",
   "repository": {
@@ -110,6 +110,14 @@
           {
             "name": "advise",
             "description": "Recommend the safest direction for a proposed plan."
+          },
+          {
+            "name": "start",
+            "description": "Arm Auto-Run for this VS Code window so Allow / Keep dialogs are pressed automatically without per-session allowlisting."
+          },
+          {
+            "name": "stop",
+            "description": "Disarm Auto-Run. Stops the ticker from pressing Allow / Keep until you arm it again or tick a chat in the sidebar."
           }
         ]
       }
@@ -285,6 +293,13 @@
           "default": 60000,
           "minimum": 1000,
           "markdownDescription": "The Auto-Run ticker only fires while at least one allow-listed chat session has been active within this many milliseconds. Default `60000` (1 minute).",
+          "scope": "application"
+        },
+        "lakeburner.autoRun.manualArmDurationMs": {
+          "type": "number",
+          "default": 1800000,
+          "minimum": 1000,
+          "markdownDescription": "How long to keep Auto-Run armed (bypassing the per-session allowlist) after `@lakeburner start` or **Send Initial Prompt** is invoked. Default `1800000` (30 minutes). Send `@lakeburner stop` to disarm early.",
           "scope": "application"
         },
         "lakeburner.uia.enabled": {

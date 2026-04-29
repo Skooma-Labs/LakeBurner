@@ -172,6 +172,14 @@ export class WebviewHost implements vscode.WebviewViewProvider {
               this.logger.warn({ fn: "onDidReceiveMessage" }, "prompt.send Missing Fields", { hasTarget: !!targetId, hasPrompt: !!prompt.trim() });
               return;
             }
+            // If Auto-Run is on, arm the ticker so the dispatched chat session
+            // gets Allow / Keep auto-pressed without requiring an @lakeburner
+            // ping in the target chat. The user opted in by clicking Send.
+            if (this.autoRun.isEnabled) {
+              const cfg = vscode.workspace.getConfiguration(this.cfgSection);
+              const durationMs = Math.max(1000, cfg.get<number>("autoRun.manualArmDurationMs", 30 * 60 * 1000));
+              await this.affected.arm(durationMs, "Send Initial Prompt");
+            }
             await this.dispatcher.send(targetId, prompt);
             return;
           }

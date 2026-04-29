@@ -4,6 +4,7 @@ import type { Logger } from "../frontend/ts/TSLogger";
 
 const STATE_KEY = "lakeburner.affectedChats.v1";
 const ALLOWLIST_KEY = "lakeburner.affectedChats.allowlist.v1";
+const ARM_KEY = "lakeburner.affectedChats.armUntil.v1";
 
 export type ChatSessionRecord = {
   /** Stable ID derived from the first user prompt in the conversation. */
@@ -125,6 +126,7 @@ export class AffectedChats {
    * `recentMs` milliseconds. Used by the Auto-Run ticker to gate clicks.
    */
   public hasRecentAllowedActivity(recentMs: number): boolean {
+    if (this.isManuallyArmed()) return true;
     const allowed = new Set(this.listAllowedIds());
     if (allowed.size === 0) return false;
     const cutoff = Date.now() - recentMs;
@@ -134,9 +136,40 @@ export class AffectedChats {
     return false;
   }
 
+  /**
+   * Manual arm: bypass the allowlist gate for `durationMs` from now. Used by
+   * the Send Initial Prompt button and by `@lakeburner start` so the user
+   * can opt a chat in without the participant having to be re-pinged on
+   * every assistant turn.
+   */
+  public async arm(durationMs: number, reason: string): Promise<void> {
+    const until = Date.now() + Math.max(0, durationMs);
+    await this.context.globalState.update(ARM_KEY, until);
+    this.logger.user({ fn: "arm" }, "Auto-Run Manually Armed", { durationMs, reason, untilIso: new Date(until).toISOString() });
+    this.emitter.fire();
+  }
+
+  public async disarm(reason: string): Promise<void> {
+    await this.context.globalState.update(ARM_KEY, 0);
+    this.logger.user({ fn: "disarm" }, "Auto-Run Manually Disarmed", { reason });
+    this.emitter.fire();
+  }
+
+  public isManuallyArmed(): boolean {
+    const until = this.context.globalState.get<number>(ARM_KEY, 0);
+    return typeof until === "number" && until > Date.now();
+  }
+
+  public armedUntilIso(): string | null {
+    const until = this.context.globalState.get<number>(ARM_KEY, 0);
+    if (!until || until <= Date.now()) return null;
+    return new Date(until).toISOString();
+  }
+
   public async clear(): Promise<void> {
     await this.context.globalState.update(STATE_KEY, {});
     await this.context.globalState.update(ALLOWLIST_KEY, []);
+    await this.context.globalState.update(ARM_KEY, 0);
     this.logger.user({ fn: "clear" }, "Affected Chats Cleared");
     this.emitter.fire();
   }
