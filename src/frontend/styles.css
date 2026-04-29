@@ -29,10 +29,10 @@ details.section > summary::-webkit-details-marker { display: none; }
 details.section > summary::before {
   content: "\25B8"; /* right-pointing triangle */
   display: inline-block;
-  font-size: 10px;
-  width: 10px;
-  margin-right: 4px;
-  opacity: 0.6;
+  font-size: 16px;
+  width: 14px;
+  margin-right: 6px;
+  opacity: 0.85;
   transition: transform 120ms ease;
 }
 details.section[open] > summary::before {
@@ -148,7 +148,7 @@ details.section > summary > .section-title {
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: 12px;
   resize: vertical;
-  min-height: 64px;
+  min-height: 128px;
 }
 
 /* ----- Provider Tiles ----- */

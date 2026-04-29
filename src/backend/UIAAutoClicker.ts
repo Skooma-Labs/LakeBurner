@@ -106,6 +106,11 @@ export class UIAAutoClicker {
 
     if (!opts.silent) {
       this.logger.info({ fn: "pressByName" }, "UIA Found No Match", { intent, names, reason: result.reason });
+      this.activity.add("INFO", `UIA ${label} no match. ${result.reason ?? ""}`.trim(), {
+        strategy: "uia",
+        intent,
+        reason: result.reason,
+      });
     }
     return null;
   }
@@ -135,7 +140,19 @@ if ($pids.Count -eq 0) {
 }
 
 $root = [System.Windows.Automation.AutomationElement]::RootElement
-$buttonCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
+# Match Button, SplitButton, Hyperlink, MenuItem — VS Code's chat dialogs
+# sometimes expose the actionable element as one of these instead of Button.
+$typesToSearch = @(
+  [System.Windows.Automation.ControlType]::Button,
+  [System.Windows.Automation.ControlType]::SplitButton,
+  [System.Windows.Automation.ControlType]::Hyperlink,
+  [System.Windows.Automation.ControlType]::MenuItem
+)
+$typeConds = @()
+foreach ($t in $typesToSearch) {
+  $typeConds += New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, $t)
+}
+$searchCond = New-Object System.Windows.Automation.OrCondition($typeConds)
 
 # Per-PID windows (top-level). We scan only top-level windows of our PIDs to
 # bound the search and avoid touching other apps.
@@ -155,24 +172,49 @@ if ($windowsByPid.Keys.Count -eq 0) {
   exit 0
 }
 
+# Normalize the requested names for case-insensitive trimmed matching.
+$normNames = @()
+foreach ($n in $names) {
+  if ($n) { $normNames += $n.ToString().Trim().ToLowerInvariant() }
+}
+
 $matched = $null
+$candidates = New-Object System.Collections.Generic.HashSet[string]
 foreach ($wins in $windowsByPid.Values) {
   foreach ($win in $wins) {
-    $buttons = $win.FindAll([System.Windows.Automation.TreeScope]::Descendants, $buttonCond)
-    foreach ($btn in $buttons) {
+    $controls = $win.FindAll([System.Windows.Automation.TreeScope]::Descendants, $searchCond)
+    foreach ($ctrl in $controls) {
       try {
-        $btnName = $btn.Current.Name
-        if (-not $btnName) { continue }
-        if ($names -contains $btnName) {
-          # Only invoke if enabled AND offscreen=false.
-          if ($btn.Current.IsEnabled -and -not $btn.Current.IsOffscreen) {
-            $invokePatternObj = $null
-            if ($btn.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$invokePatternObj)) {
-              $invokePatternObj.Invoke()
-              $matched = $btnName
-              break
-            }
+        $ctrlName = $ctrl.Current.Name
+        if (-not $ctrlName) { continue }
+        $normCtrl = $ctrlName.Trim().ToLowerInvariant()
+        if (-not $normCtrl) { continue }
+        $hit = $false
+        foreach ($wanted in $normNames) {
+          if ($normCtrl -eq $wanted -or $normCtrl.StartsWith($wanted) -or $normCtrl.Contains($wanted)) {
+            $hit = $true
+            break
           }
+        }
+        if (-not $hit) {
+          # Track up to 40 candidate names for diagnostics.
+          if ($candidates.Count -lt 40) { [void]$candidates.Add($ctrlName) }
+          continue
+        }
+        if (-not $ctrl.Current.IsEnabled -or $ctrl.Current.IsOffscreen) { continue }
+
+        $invokePatternObj = $null
+        if ($ctrl.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$invokePatternObj)) {
+          $invokePatternObj.Invoke()
+          $matched = $ctrlName
+          break
+        }
+        # SplitButton may not expose InvokePattern directly — try ExpandCollapse + select first child invoke.
+        $togglePatternObj = $null
+        if ($ctrl.TryGetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern, [ref]$togglePatternObj)) {
+          $togglePatternObj.Toggle()
+          $matched = $ctrlName
+          break
         }
       } catch {}
     }
@@ -181,7 +223,12 @@ foreach ($wins in $windowsByPid.Values) {
   if ($matched) { break }
 }
 
-if ($matched) { Write-Output ("MATCH:" + $matched) } else { Write-Output "NO_MATCH" }
+if ($matched) {
+  Write-Output ("MATCH:" + $matched)
+} else {
+  $sample = ($candidates | Select-Object -First 20) -join " | "
+  Write-Output ("NO_MATCH:" + $sample)
+}
 `.trim();
 
     const child = spawn(
@@ -203,7 +250,11 @@ if ($matched) { Write-Output ("MATCH:" + $matched) } else { Write-Output "NO_MAT
       const out = stdout.trim();
       if (out.startsWith("MATCH:")) {
         resolve({ matchedName: out.slice("MATCH:".length).trim() });
-      } else if (out === "NO_MATCH" || out === "NO_PROCESS" || out === "NO_WINDOW") {
+      } else if (out.startsWith("NO_MATCH")) {
+        // Format: NO_MATCH or NO_MATCH:<sample candidates>
+        const sample = out.length > "NO_MATCH:".length ? out.slice("NO_MATCH:".length).trim() : "";
+        resolve({ reason: sample ? `NO_MATCH (candidates: ${sample})` : "NO_MATCH" });
+      } else if (out === "NO_PROCESS" || out === "NO_WINDOW") {
         resolve({ reason: out });
       } else {
         resolve({ reason: out || "EMPTY" });

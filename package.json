@@ -2,7 +2,7 @@
   "name": "lakeburner",
   "displayName": "LakeBurner",
   "description": "User-Approval Harness for AI coding assistants. Sits beside Copilot Chat, Claude Code, and Codex inside VS Code, monitors their presence, and gates risky actions through @lakeburner.",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "publisher": "JBLDotExe",
   "license": "MIT",
   "repository": {
