@@ -52,7 +52,11 @@ export class AutoRunTicker implements vscode.Disposable {
     const cfg = vscode.workspace.getConfiguration(this.cfgSection);
     const interval = cfg.get<number>("autoRun.tickIntervalMs", 0);
     if (!Number.isFinite(interval) || interval <= 0) {
-      this.activity.add("INFO", "Ticker disabled (autoRun.tickIntervalMs <= 0)", { intervalMs: interval });
+      this.activity.add(
+        "BLOCK",
+        `Ticker disabled — set "lakeburner.autoRun.tickIntervalMs" > 0 (try 1500) to enable polling.`,
+        { intervalMs: interval }
+      );
       this.logger.info({ fn: "refresh" }, "Auto-Run Ticker Disabled (interval <= 0)");
       return;
     }
