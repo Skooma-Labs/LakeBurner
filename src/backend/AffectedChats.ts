@@ -68,6 +68,14 @@ export class AffectedChats {
         turns: 1,
       };
       this.logger.task({ fn: "registerTurn" }, "New Chat Session Tracked", { id, label: all[id].label });
+      if (this.getAutoAllow()) {
+        const set = new Set(this.listAllowedIds());
+        if (!set.has(id)) {
+          set.add(id);
+          void this.context.globalState.update(ALLOWLIST_KEY, Array.from(set));
+          this.logger.user({ fn: "registerTurn" }, "Auto-Allowlisted New Session", { id });
+        }
+      }
     }
     void this.context.globalState.update(STATE_KEY, all);
     this.emitter.fire();
@@ -142,6 +150,11 @@ export class AffectedChats {
     const cfg = vscode.workspace.getConfiguration(this.cfgSection);
     const v = cfg.get<number>("affectedChats.windowDays", 3);
     return Number.isFinite(v) && v > 0 ? v : 3;
+  }
+
+  private getAutoAllow(): boolean {
+    const cfg = vscode.workspace.getConfiguration(this.cfgSection);
+    return cfg.get<boolean>("affectedChats.autoAllowNewSessions", true);
   }
 }
 

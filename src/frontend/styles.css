@@ -13,6 +13,40 @@ body {
   margin-bottom: 16px;
 }
 
+/* Collapsible <details>/<summary> sections. */
+details.section > summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  border-radius: 4px;
+}
+details.section > summary::-webkit-details-marker { display: none; }
+details.section > summary::before {
+  content: "\25B8"; /* right-pointing triangle */
+  display: inline-block;
+  font-size: 10px;
+  width: 10px;
+  margin-right: 4px;
+  opacity: 0.6;
+  transition: transform 120ms ease;
+}
+details.section[open] > summary::before {
+  transform: rotate(90deg);
+}
+details.section > summary:hover { background: var(--vscode-list-hoverBackground); }
+details.section > summary > .section-title {
+  flex: 1 1 auto;
+  margin: 0;
+}
+.section-action {
+  margin-left: auto;
+}
+
 .section-head {
   display: flex;
   align-items: center;

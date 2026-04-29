@@ -2,7 +2,7 @@
   "name": "lakeburner",
   "displayName": "LakeBurner",
   "description": "User-Approval Harness for AI coding assistants. Sits beside Copilot Chat, Claude Code, and Codex inside VS Code, monitors their presence, and gates risky actions through @lakeburner.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "publisher": "JBLDotExe",
   "license": "MIT",
   "repository": {
@@ -266,6 +266,12 @@
           "default": 3,
           "minimum": 1,
           "markdownDescription": "How many days of chat history to keep visible in the **Affected Chats** list. Sessions older than this are pruned automatically.",
+          "scope": "application"
+        },
+        "lakeburner.affectedChats.autoAllowNewSessions": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "When `true`, every chat session newly registered by `@lakeburner` is added to the Auto-Run allowlist immediately. Disable to require an explicit tick in the **Affected Chats** sidebar before Auto-Run can act on a session.",
           "scope": "application"
         },
         "lakeburner.affectedChats.recentActivityMs": {

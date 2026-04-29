@@ -17,13 +17,13 @@
     <title>LakeBurner</title>
   </head>
   <body>
-    <section class="section">
-      <h2 class="section-title">AI Providers</h2>
+    <details class="section" open>
+      <summary class="section-summary"><h2 class="section-title">AI Providers</h2></summary>
       <div id="provider-list" class="provider-list"></div>
-    </section>
+    </details>
 
-    <section class="section">
-      <h2 class="section-title">Tasks</h2>
+    <details class="section" open>
+      <summary class="section-summary"><h2 class="section-title">Tasks</h2></summary>
       <div class="stack">
         <button id="autoRunBtn" class="btn btn-toggle" type="button" aria-pressed="false"
                 title="Auto-approve tool/Keep prompts. Replies 'Keep going, I trust your intuitions' when an assistant asks for direction.">
@@ -47,10 +47,10 @@
           Calibrate Allow Position
         </button>
       </div>
-    </section>
+    </details>
 
-    <section class="section">
-      <h2 class="section-title">Send Initial Prompt</h2>
+    <details class="section">
+      <summary class="section-summary"><h2 class="section-title">Send Initial Prompt</h2></summary>
       <div class="stack">
         <select id="promptTarget" class="select" aria-label="Chat target"></select>
         <textarea id="promptText" class="textarea" rows="4" placeholder="Type the prompt to seed the chat with..."></textarea>
@@ -59,24 +59,24 @@
           <button id="savePromptBtn" class="btnSmall" type="button" title="Save current text as the default prompt.">Save Default</button>
         </div>
       </div>
-    </section>
+    </details>
 
-    <section class="section">
-      <div class="section-head">
+    <details class="section" open>
+      <summary class="section-summary">
         <h2 class="section-title">Affected Chats</h2>
-        <button id="clearChatsBtn" class="btnSmall" type="button" title="Clear all tracked chats and the allowlist.">Clear</button>
-      </div>
+        <button id="clearChatsBtn" class="btnSmall section-action" type="button" title="Clear all tracked chats and the allowlist.">Clear</button>
+      </summary>
       <p class="section-hint">Chats you've invoked <code>@lakeburner</code> in. Tick a chat to let Auto-Run press Allow / Keep on its behalf.</p>
       <div id="affected-chats" class="affected-chats" aria-live="polite"></div>
-    </section>
+    </details>
 
-    <section class="section">
-      <div class="section-head">
+    <details class="section">
+      <summary class="section-summary">
         <h2 class="section-title">Activity</h2>
-        <button id="clearActivityBtn" class="btnSmall" type="button">Clear</button>
-      </div>
+        <button id="clearActivityBtn" class="btnSmall section-action" type="button">Clear</button>
+      </summary>
       <div id="activity-log" class="activity-log" aria-live="polite"></div>
-    </section>
+    </details>
 
     <script nonce="{{nonce}}" src="{{jsUri}}"></script>
   </body>

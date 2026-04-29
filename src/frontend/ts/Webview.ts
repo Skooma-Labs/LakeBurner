@@ -298,7 +298,9 @@ function bindButtons(): void {
 
   const clearBtn = el<HTMLButtonElement>("clearActivityBtn");
   if (clearBtn) {
-    clearBtn.addEventListener("click", () => {
+    clearBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
       log.user("ui.activity.clear", "Activity Clear Clicked");
       postMessageToHost({ type: "activity.clear" });
     });
@@ -332,7 +334,9 @@ function bindButtons(): void {
 
   const clearChatsBtn = el<HTMLButtonElement>("clearChatsBtn");
   if (clearChatsBtn) {
-    clearChatsBtn.addEventListener("click", () => {
+    clearChatsBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
       log.user("ui.affectedChats.clear", "Clear Affected Chats Clicked");
       postMessageToHost({ type: "affectedChats.clear" });
     });
