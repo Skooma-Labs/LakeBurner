@@ -289,9 +289,17 @@ details.section > summary > .section-title {
 
 .activity-item {
   display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.35;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--vscode-panel-border, transparent);
+}
+
+.activity-head {
+  display: flex;
   gap: 6px;
   align-items: baseline;
-  line-height: 1.35;
 }
 
 .activity-item .ts { opacity: 0.55; flex: 0 0 auto; }
@@ -306,3 +314,31 @@ details.section > summary > .section-title {
 .activity-item .kind.BLOCK { color: #e74c3c; }
 .activity-item .kind.INFO { color: #c0c0c0; }
 .activity-item .msg { flex: 1 1 auto; word-break: break-word; }
+
+.activity-data {
+  margin-left: 20px;
+  font-size: 0.9em;
+}
+.activity-data > summary {
+  cursor: pointer;
+  opacity: 0.6;
+  list-style: none;
+}
+.activity-data > summary::before {
+  content: "▸";
+  display: inline-block;
+  width: 1em;
+  font-size: 0.8em;
+}
+.activity-data[open] > summary::before { content: "▾"; }
+.activity-data pre {
+  margin: 4px 0 6px 16px;
+  padding: 6px 8px;
+  background: var(--vscode-textCodeBlock-background, rgba(127,127,127,0.08));
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow: auto;
+  font-family: var(--vscode-editor-font-family, monospace);
+}

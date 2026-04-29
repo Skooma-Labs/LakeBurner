@@ -79,49 +79,72 @@ export class UIAAutoClicker {
     names: string[],
     opts: { silent?: boolean }
   ): Promise<string | null> {
-    if (!this.isEnabled()) return null;
+    if (!this.isEnabled()) {
+      if (!opts.silent) {
+        this.activity.add("INFO", `UIA disabled (platform=${process.platform}, uia.enabled=false?)`, { strategy: "uia", intent });
+      }
+      return null;
+    }
 
     const procs = this.getProcessNames();
-    let result: { matchedName?: string; reason?: string };
+    let result: UIAResult;
     try {
       result = await runUIAFinder(names, procs);
     } catch (err: unknown) {
       const reason = err instanceof Error ? err.message : String(err);
       if (!opts.silent) {
         this.logger.error({ fn: "pressByName" }, "UIA Script Failed", { intent, reason });
-        this.activity.add("BLOCK", `UIA ${label} failed: ${reason}`, { strategy: "uia", intent });
+        this.activity.add("BLOCK", `UIA ${label} failed to launch: ${reason}`, { strategy: "uia", intent });
       }
       return null;
     }
 
+    const d = result.diagnostics;
     if (result.matchedName) {
-      this.logger.task({ fn: "pressByName" }, "UIA Invoked", { intent, name: result.matchedName });
-      this.activity.add("APPROVE", `Pressed "${label}" via UIA: ${result.matchedName}`, {
-        strategy: "uia",
-        intent,
-        name: result.matchedName,
-      });
+      this.logger.task({ fn: "pressByName" }, "UIA Invoked", { intent, name: result.matchedName, diagnostics: d });
+      this.activity.add(
+        "APPROVE",
+        `UIA pressed "${label}": ${result.matchedName} (procs=${d.pids.length}, wins=${d.windowCount}, controls=${d.controlCount}, ${d.elapsedMs}ms)`,
+        { strategy: "uia", intent, name: result.matchedName, diagnostics: d, names }
+      );
       return result.matchedName;
     }
 
     if (!opts.silent) {
-      this.logger.info({ fn: "pressByName" }, "UIA Found No Match", { intent, names, reason: result.reason });
-      this.activity.add("INFO", `UIA ${label} no match. ${result.reason ?? ""}`.trim(), {
-        strategy: "uia",
-        intent,
-        reason: result.reason,
-      });
+      const sampleStr = d.candidates.length ? ` candidates: ${d.candidates.slice(0, 12).join(" | ")}` : "";
+      const errStr = d.error ? ` error: ${d.error}` : "";
+      this.logger.info({ fn: "pressByName" }, "UIA Found No Match", { intent, names, result });
+      this.activity.add(
+        "INFO",
+        `UIA ${label} ${result.reason ?? "no match"} (procs=${d.pids.length}, wins=${d.windowCount}, controls=${d.controlCount}, ${d.elapsedMs}ms).${sampleStr}${errStr}`,
+        { strategy: "uia", intent, reason: result.reason, names, diagnostics: d }
+      );
     }
     return null;
   }
 }
 
-function runUIAFinder(names: string[], processNames: string[]): Promise<{ matchedName?: string; reason?: string }> {
+type UIAResult = {
+  matchedName?: string;
+  reason?: string;
+  diagnostics: {
+    procs: string[];
+    pids: number[];
+    windowCount: number;
+    controlCount: number;
+    candidates: string[];
+    elapsedMs: number;
+    error?: string;
+  };
+};
+
+function runUIAFinder(names: string[], processNames: string[]): Promise<UIAResult> {
   return new Promise((resolve, reject) => {
     const namesJson = JSON.stringify(names);
     const procsJson = JSON.stringify(processNames);
-    // PowerShell script: scope by process name, walk descendants, match the
-    // first button whose Name equals one of the requested labels, then Invoke.
+    const startedAt = Date.now();
+    // PowerShell: scope by process, walk descendants, return JSON with the
+    // matched name (if any) plus diagnostics about what UIA actually saw.
     const script = `
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient | Out-Null
@@ -130,18 +153,27 @@ Add-Type -AssemblyName UIAutomationTypes  | Out-Null
 $names = '${namesJson.replace(/'/g, "''")}' | ConvertFrom-Json
 $procs = '${procsJson.replace(/'/g, "''")}' | ConvertFrom-Json
 
+$diag = @{
+  pids = @()
+  windowCount = 0
+  controlCount = 0
+  candidates = @()
+  matched = $null
+  reason = $null
+}
+
 $pids = @()
 foreach ($pn in $procs) {
   try { Get-Process -Name $pn -ErrorAction Stop | ForEach-Object { $pids += $_.Id } } catch {}
 }
+$diag.pids = $pids
 if ($pids.Count -eq 0) {
-  Write-Output "NO_PROCESS"
+  $diag.reason = "NO_PROCESS"
+  $diag | ConvertTo-Json -Compress -Depth 5
   exit 0
 }
 
 $root = [System.Windows.Automation.AutomationElement]::RootElement
-# Match Button, SplitButton, Hyperlink, MenuItem — VS Code's chat dialogs
-# sometimes expose the actionable element as one of these instead of Button.
 $typesToSearch = @(
   [System.Windows.Automation.ControlType]::Button,
   [System.Windows.Automation.ControlType]::SplitButton,
@@ -154,11 +186,8 @@ foreach ($t in $typesToSearch) {
 }
 $searchCond = New-Object System.Windows.Automation.OrCondition($typeConds)
 
-# Per-PID windows (top-level). We scan only top-level windows of our PIDs to
-# bound the search and avoid touching other apps.
 $windowsByPid = @{}
-foreach ($child in $root.FindAll([System.Windows.Automation.TreeScope]::Children,
-                                  [System.Windows.Automation.Condition]::TrueCondition)) {
+foreach ($child in $root.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)) {
   try {
     $childPid = $child.Current.ProcessId
     if ($pids -contains $childPid) {
@@ -167,22 +196,25 @@ foreach ($child in $root.FindAll([System.Windows.Automation.TreeScope]::Children
     }
   } catch {}
 }
-if ($windowsByPid.Keys.Count -eq 0) {
-  Write-Output "NO_WINDOW"
+$winCount = 0
+foreach ($v in $windowsByPid.Values) { $winCount += $v.Count }
+$diag.windowCount = $winCount
+if ($winCount -eq 0) {
+  $diag.reason = "NO_WINDOW"
+  $diag | ConvertTo-Json -Compress -Depth 5
   exit 0
 }
 
-# Normalize the requested names for case-insensitive trimmed matching.
 $normNames = @()
-foreach ($n in $names) {
-  if ($n) { $normNames += $n.ToString().Trim().ToLowerInvariant() }
-}
+foreach ($n in $names) { if ($n) { $normNames += $n.ToString().Trim().ToLowerInvariant() } }
 
 $matched = $null
 $candidates = New-Object System.Collections.Generic.HashSet[string]
+$totalControls = 0
 foreach ($wins in $windowsByPid.Values) {
   foreach ($win in $wins) {
     $controls = $win.FindAll([System.Windows.Automation.TreeScope]::Descendants, $searchCond)
+    $totalControls += $controls.Count
     foreach ($ctrl in $controls) {
       try {
         $ctrlName = $ctrl.Current.Name
@@ -197,19 +229,16 @@ foreach ($wins in $windowsByPid.Values) {
           }
         }
         if (-not $hit) {
-          # Track up to 40 candidate names for diagnostics.
-          if ($candidates.Count -lt 40) { [void]$candidates.Add($ctrlName) }
+          if ($candidates.Count -lt 60) { [void]$candidates.Add($ctrlName) }
           continue
         }
         if (-not $ctrl.Current.IsEnabled -or $ctrl.Current.IsOffscreen) { continue }
-
         $invokePatternObj = $null
         if ($ctrl.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$invokePatternObj)) {
           $invokePatternObj.Invoke()
           $matched = $ctrlName
           break
         }
-        # SplitButton may not expose InvokePattern directly — try ExpandCollapse + select first child invoke.
         $togglePatternObj = $null
         if ($ctrl.TryGetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern, [ref]$togglePatternObj)) {
           $togglePatternObj.Toggle()
@@ -222,13 +251,15 @@ foreach ($wins in $windowsByPid.Values) {
   }
   if ($matched) { break }
 }
-
+$diag.controlCount = $totalControls
+$diag.candidates = @($candidates | Select-Object -First 30)
 if ($matched) {
-  Write-Output ("MATCH:" + $matched)
+  $diag.matched = $matched
+  $diag.reason = "MATCH"
 } else {
-  $sample = ($candidates | Select-Object -First 20) -join " | "
-  Write-Output ("NO_MATCH:" + $sample)
+  $diag.reason = "NO_MATCH"
 }
+$diag | ConvertTo-Json -Compress -Depth 5
 `.trim();
 
     const child = spawn(
@@ -243,21 +274,48 @@ if ($matched) {
     child.stderr.on("data", (c) => (stderr += c.toString()));
     child.on("error", reject);
     child.on("close", (code) => {
+      const elapsedMs = Date.now() - startedAt;
+      const baseDiag = {
+        procs: processNames,
+        pids: [] as number[],
+        windowCount: 0,
+        controlCount: 0,
+        candidates: [] as string[],
+        elapsedMs,
+      };
       if (code !== 0) {
-        reject(new Error(`powershell exited ${code}: ${stderr.trim() || stdout.trim()}`));
+        resolve({
+          reason: "SCRIPT_ERROR",
+          diagnostics: { ...baseDiag, error: stderr.trim() || stdout.trim() || `exit ${code}` },
+        });
         return;
       }
       const out = stdout.trim();
-      if (out.startsWith("MATCH:")) {
-        resolve({ matchedName: out.slice("MATCH:".length).trim() });
-      } else if (out.startsWith("NO_MATCH")) {
-        // Format: NO_MATCH or NO_MATCH:<sample candidates>
-        const sample = out.length > "NO_MATCH:".length ? out.slice("NO_MATCH:".length).trim() : "";
-        resolve({ reason: sample ? `NO_MATCH (candidates: ${sample})` : "NO_MATCH" });
-      } else if (out === "NO_PROCESS" || out === "NO_WINDOW") {
-        resolve({ reason: out });
-      } else {
-        resolve({ reason: out || "EMPTY" });
+      try {
+        const parsed = JSON.parse(out) as {
+          pids?: number[];
+          windowCount?: number;
+          controlCount?: number;
+          candidates?: string[];
+          matched?: string | null;
+          reason?: string;
+        };
+        resolve({
+          matchedName: parsed.matched ?? undefined,
+          reason: parsed.reason,
+          diagnostics: {
+            ...baseDiag,
+            pids: parsed.pids ?? [],
+            windowCount: parsed.windowCount ?? 0,
+            controlCount: parsed.controlCount ?? 0,
+            candidates: parsed.candidates ?? [],
+          },
+        });
+      } catch (parseErr) {
+        resolve({
+          reason: "PARSE_ERROR",
+          diagnostics: { ...baseDiag, error: `${(parseErr as Error).message}; raw=${out.slice(0, 500)}` },
+        });
       }
     });
   });

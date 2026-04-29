@@ -181,42 +181,93 @@ export class AutoClicker {
    */
   public async pressKeep(opts: { silent?: boolean } = {}): Promise<{ ok: boolean; via: "command" | "uia" | "coordinate" | "none"; commandId?: string; uiaName?: string }> {
     const preferCommand = vscode.workspace.getConfiguration(this.cfgSection).get<boolean>("autoClick.preferCommand", false);
+    const tried: string[] = [];
 
     if (preferCommand) {
+      tried.push("command");
       const commandId = await this.pressKeepViaCommand(opts);
-      if (commandId) return { ok: true, via: "command", commandId };
+      if (commandId) {
+        this.logChainSummary("Keep", "command", tried, opts, { commandId });
+        return { ok: true, via: "command", commandId };
+      }
     }
 
+    tried.push("uia");
     const uiaName = await this.uia.pressKeep(opts);
-    if (uiaName) return { ok: true, via: "uia", uiaName };
+    if (uiaName) {
+      this.logChainSummary("Keep", "uia", tried, opts, { uiaName });
+      return { ok: true, via: "uia", uiaName };
+    }
 
     if (!preferCommand) {
+      tried.push("command");
       const commandId = await this.pressKeepViaCommand(opts);
-      if (commandId) return { ok: true, via: "command", commandId };
+      if (commandId) {
+        this.logChainSummary("Keep", "command", tried, opts, { commandId });
+        return { ok: true, via: "command", commandId };
+      }
     }
 
+    tried.push("coordinate");
     const ok = await this.pressKeepViaCoordinates(opts);
+    this.logChainSummary("Keep", ok ? "coordinate" : "none", tried, opts);
     return { ok, via: ok ? "coordinate" : "none" };
   }
 
   public async pressAllow(opts: { silent?: boolean } = {}): Promise<{ ok: boolean; via: "command" | "uia" | "coordinate" | "none"; commandId?: string; uiaName?: string }> {
     const preferCommand = vscode.workspace.getConfiguration(this.cfgSection).get<boolean>("autoClick.preferCommand", false);
+    const tried: string[] = [];
 
     if (preferCommand) {
+      tried.push("command");
       const commandId = await this.pressAllowViaCommand(opts);
-      if (commandId) return { ok: true, via: "command", commandId };
+      if (commandId) {
+        this.logChainSummary("Allow", "command", tried, opts, { commandId });
+        return { ok: true, via: "command", commandId };
+      }
     }
 
+    tried.push("uia");
     const uiaName = await this.uia.pressAllow(opts);
-    if (uiaName) return { ok: true, via: "uia", uiaName };
+    if (uiaName) {
+      this.logChainSummary("Allow", "uia", tried, opts, { uiaName });
+      return { ok: true, via: "uia", uiaName };
+    }
 
     if (!preferCommand) {
+      tried.push("command");
       const commandId = await this.pressAllowViaCommand(opts);
-      if (commandId) return { ok: true, via: "command", commandId };
+      if (commandId) {
+        this.logChainSummary("Allow", "command", tried, opts, { commandId });
+        return { ok: true, via: "command", commandId };
+      }
     }
 
+    tried.push("coordinate");
     const ok = await this.pressAllowViaCoordinates(opts);
+    this.logChainSummary("Allow", ok ? "coordinate" : "none", tried, opts);
     return { ok, via: ok ? "coordinate" : "none" };
+  }
+
+  /**
+   * Emit a single per-call chain-summary entry so a manual Press Allow/Keep
+   * click produces one diagnostic line in the activity log. Suppressed when
+   * `silent` is set (the ticker invokes us silently every interval).
+   */
+  private logChainSummary(
+    label: "Allow" | "Keep",
+    outcome: "command" | "uia" | "coordinate" | "none",
+    tried: string[],
+    opts: { silent?: boolean },
+    extra: Record<string, unknown> = {}
+  ): void {
+    if (opts.silent) return;
+    const kind = outcome === "none" ? "BLOCK" : "INFO";
+    this.activity.add(
+      kind,
+      `Press ${label} chain: tried [${tried.join(" → ")}] → ${outcome}`,
+      { strategy: "chain", label, outcome, tried, ...extra }
+    );
   }
 
   /**

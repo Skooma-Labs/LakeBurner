@@ -25,7 +25,7 @@ export function activate(context: vscode.ExtensionContext) {
   const uia = new UIAAutoClicker(CFG_SECTION, logger, activity);
   const autoClicker = new AutoClicker(CFG_SECTION, logger, activity, context, uia);
   const dispatcher = new PromptDispatcher(CFG_SECTION, logger, activity);
-  const ticker = new AutoRunTicker(CFG_SECTION, logger, autoRun, autoClicker, affected);
+  const ticker = new AutoRunTicker(CFG_SECTION, logger, autoRun, autoClicker, affected, activity);
   ticker.start(context);
 
   const provider = new WebviewHost(context, CFG_SECTION, logger, monitor, activity, autoRun, autoClicker, dispatcher, affected);

@@ -155,20 +155,41 @@ function renderActivity(entries: ActivityEntry[]): void {
     const item = document.createElement("div");
     item.className = "activity-item";
 
+    const head = document.createElement("div");
+    head.className = "activity-head";
+
     const ts = document.createElement("span");
     ts.className = "ts";
     ts.textContent = entry.tsIso.slice(11, 19);
-    item.appendChild(ts);
+    head.appendChild(ts);
 
     const kind = document.createElement("span");
     kind.className = `kind ${entry.kind}`;
     kind.textContent = entry.kind;
-    item.appendChild(kind);
+    head.appendChild(kind);
 
     const msg = document.createElement("span");
     msg.className = "msg";
     msg.textContent = entry.message;
-    item.appendChild(msg);
+    head.appendChild(msg);
+
+    item.appendChild(head);
+
+    if (entry.data !== undefined && entry.data !== null) {
+      const details = document.createElement("details");
+      details.className = "activity-data";
+      const summary = document.createElement("summary");
+      summary.textContent = "details";
+      details.appendChild(summary);
+      const pre = document.createElement("pre");
+      try {
+        pre.textContent = JSON.stringify(entry.data, null, 2);
+      } catch {
+        pre.textContent = String(entry.data);
+      }
+      details.appendChild(pre);
+      item.appendChild(details);
+    }
 
     root.appendChild(item);
   }
