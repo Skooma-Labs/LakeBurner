@@ -179,11 +179,11 @@ export class AutoClicker {
    * Set `lakeburner.autoClick.preferCommand = true` to flip back to the old
    * command-first order.
    */
-  public async pressKeep(opts: { silent?: boolean } = {}): Promise<{ ok: boolean; via: "command" | "uia" | "coordinate" | "none"; commandId?: string; uiaName?: string }> {
+  public async pressKeep(opts: { silent?: boolean; uiaOnly?: boolean } = {}): Promise<{ ok: boolean; via: "command" | "uia" | "coordinate" | "none"; commandId?: string; uiaName?: string }> {
     const preferCommand = vscode.workspace.getConfiguration(this.cfgSection).get<boolean>("autoClick.preferCommand", false);
     const tried: string[] = [];
 
-    if (preferCommand) {
+    if (preferCommand && !opts.uiaOnly) {
       tried.push("command");
       const commandId = await this.pressKeepViaCommand(opts);
       if (commandId) {
@@ -197,6 +197,11 @@ export class AutoClicker {
     if (uiaName) {
       this.logChainSummary("Keep", "uia", tried, opts, { uiaName });
       return { ok: true, via: "uia", uiaName };
+    }
+
+    if (opts.uiaOnly) {
+      this.logChainSummary("Keep", "none", tried, opts);
+      return { ok: false, via: "none" };
     }
 
     if (!preferCommand) {
@@ -214,11 +219,11 @@ export class AutoClicker {
     return { ok, via: ok ? "coordinate" : "none" };
   }
 
-  public async pressAllow(opts: { silent?: boolean } = {}): Promise<{ ok: boolean; via: "command" | "uia" | "coordinate" | "none"; commandId?: string; uiaName?: string }> {
+  public async pressAllow(opts: { silent?: boolean; uiaOnly?: boolean } = {}): Promise<{ ok: boolean; via: "command" | "uia" | "coordinate" | "none"; commandId?: string; uiaName?: string }> {
     const preferCommand = vscode.workspace.getConfiguration(this.cfgSection).get<boolean>("autoClick.preferCommand", false);
     const tried: string[] = [];
 
-    if (preferCommand) {
+    if (preferCommand && !opts.uiaOnly) {
       tried.push("command");
       const commandId = await this.pressAllowViaCommand(opts);
       if (commandId) {
@@ -232,6 +237,11 @@ export class AutoClicker {
     if (uiaName) {
       this.logChainSummary("Allow", "uia", tried, opts, { uiaName });
       return { ok: true, via: "uia", uiaName };
+    }
+
+    if (opts.uiaOnly) {
+      this.logChainSummary("Allow", "none", tried, opts);
+      return { ok: false, via: "none" };
     }
 
     if (!preferCommand) {

@@ -113,8 +113,11 @@ export class AutoRunTicker implements vscode.Disposable {
     this.lastSkipReason = null;
     this.inFlight = true;
     try {
-      const allowResult = await this.autoClicker.pressAllow({ silent: true });
-      const keepResult = await this.autoClicker.pressKeep({ silent: true });
+      // UIA-only in the ticker: command + coordinate strategies steal focus
+      // (chat panel activation) or jump the mouse cursor. UIA Invoke() does
+      // neither — it presses the button in-place without raising the window.
+      const allowResult = await this.autoClicker.pressAllow({ silent: true, uiaOnly: true });
+      const keepResult = await this.autoClicker.pressKeep({ silent: true, uiaOnly: true });
       this.firedCount++;
       // Only log when at least one strategy did something useful.
       if (allowResult.ok || keepResult.ok) {

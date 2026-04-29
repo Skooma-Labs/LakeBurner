@@ -122,6 +122,20 @@ export class AffectedChats {
   }
 
   /**
+   * Wipe the entire registry (sessions + allowlist + legacy arm key). Called
+   * on extension activation so each LakeBurner session starts from a clean
+   * slate — no chats are armed until the user explicitly arms one via Send
+   * Initial Prompt or `@lakeburner start`.
+   */
+  public async clearAll(): Promise<void> {
+    await this.context.globalState.update(STATE_KEY, undefined);
+    await this.context.globalState.update(ALLOWLIST_KEY, undefined);
+    await this.context.globalState.update(ARM_KEY, undefined);
+    this.logger.task({ fn: "clearAll" }, "Affected Chats Reset");
+    this.emitter.fire();
+  }
+
+  /**
    * Auto-Run gate: true if any allow-listed session exists (and is still in
    * the tracking window). Membership is the only signal — once a session is
    * on the list, it stays armed for that window until it's explicitly removed

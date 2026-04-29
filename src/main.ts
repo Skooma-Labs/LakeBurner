@@ -22,6 +22,13 @@ export function activate(context: vscode.ExtensionContext) {
   const monitor = new ProviderMonitor(logger, CFG_SECTION);
   const autoRun = new AutoRunMode(context, logger);
   const affected = new AffectedChats(context, CFG_SECTION, logger);
+  // Reset the Affected Chats registry on every activation so each LakeBurner
+  // session starts cold — no chats are armed until the user explicitly arms
+  // one (Send Initial Prompt or @lakeburner start). Fire-and-forget; the
+  // globalState write is fast and not awaited by anything below.
+  void affected.clearAll().then(() => {
+    activity.add("INFO", "Affected Chats reset for new session");
+  });
   const uia = new UIAAutoClicker(CFG_SECTION, logger, activity);
   const autoClicker = new AutoClicker(CFG_SECTION, logger, activity, context, uia);
   const dispatcher = new PromptDispatcher(CFG_SECTION, logger, activity);
