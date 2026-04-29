@@ -7,7 +7,7 @@
     "module": "CommonJS",
     "types": ["node"],
     "moduleResolution": "node10",
-    "ignoreDeprecations": "5.0",
+    "ignoreDeprecations": "6.0",
     "esModuleInterop": true,
     "strict": true,
     "skipLibCheck": true,
