@@ -2,7 +2,7 @@
   "name": "lakeburner",
   "displayName": "LakeBurner",
   "description": "User-Approval Harness for AI coding assistants. Sits beside Copilot Chat, Claude Code, and Codex inside VS Code, monitors their presence, and gates risky actions through @lakeburner.",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "publisher": "JBLDotExe",
   "license": "MIT",
   "repository": {
@@ -295,8 +295,15 @@
         "lakeburner.uia.busyButtonNames": {
           "type": "array",
           "items": { "type": "string" },
-          "default": ["Cancel", "Stop", "Stop generating", "Cancel request", "Cancel Editing Session"],
-          "markdownDescription": "Accessible names of buttons that indicate the chat is currently generating. While any of these is visible and enabled, the **Keep Going** stall-detector is suppressed.",
+          "default": ["stop", "cancel", "loading", "queued", "generating", "working", "thinking", "running"],
+          "markdownDescription": "Substrings (case-insensitive) the busy probe scans for across all chat-area controls. Any match suppresses the **Keep Going** stall-detector. Be intentionally generous — false positives just delay the prompt; false negatives queue on top of an active generation.",
+          "scope": "application"
+        },
+        "lakeburner.uia.busyExcludePatterns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["press \"", "press “", "(shift+", "(ctrl+", "(alt+", "(f5)", "(f9)", "(f10)", "(f11)", "lakeburner"],
+          "markdownDescription": "Substrings (case-insensitive) that exclude controls from the busy scan even if they otherwise match a busy keyword. Filters out workbench chrome (debug toolbar, our own sidebar buttons) so they cannot be misread as chat activity.",
           "scope": "application"
         },
         "lakeburner.affectedChats.windowDays": {

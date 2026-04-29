@@ -41,14 +41,44 @@ export class UIAAutoClicker {
   ];
 
   public static readonly DEFAULT_BUSY_NAMES = [
-    // Names of buttons VS Code shows in the chat input box / chat header
-    // while the assistant is actively generating. If any of these is present
-    // and enabled the chat is NOT idle and we must not send a Keep Going.
-    "Cancel",
-    "Stop",
-    "Stop generating",
-    "Cancel request",
-    "Cancel Editing Session",
+    // Substrings (case-insensitive) the busy probe scans for across all chat
+    // controls. Any positive match means the chat is NOT idle and we must
+    // not send Keep Going. The probe runs in `containsMode` and over a wider
+    // set of control types (Button + Text + Group + ProgressBar) so it can
+    // catch the "Loading", "QUEUED", and "Generating" inline indicators VS
+    // Code shows while a request is streaming or queued.
+    //
+    // Be intentionally conservative — false positives (think busy when not)
+    // are harmless (we just wait longer); false negatives are catastrophic
+    // (we queue on top of an active generation).
+    "stop",
+    "cancel",
+    "loading",
+    "queued",
+    "generating",
+    "working",
+    "thinking",
+    "running",
+  ];
+
+  /**
+   * Substring patterns applied as exclusions during the busy scan. Any
+   * control whose normalized name matches one of these is ignored even if
+   * it would otherwise be a busy-keyword hit. This filters out workbench
+   * chrome (debug toolbar buttons, our own sidebar, etc.) so they cannot
+   * be misread as chat activity.
+   */
+  public static readonly DEFAULT_BUSY_EXCLUDES = [
+    "press \"",   // our own sidebar buttons (legacy, may be removed later)
+    "press \u201c", // smart-quote variant
+    "(shift+",   // debug toolbar shortcuts: Stop (Shift+F5), etc.
+    "(ctrl+",
+    "(alt+",
+    "(f5)",
+    "(f9)",
+    "(f10)",
+    "(f11)",
+    "lakeburner",
   ];
 
   public isEnabled(): boolean {
@@ -74,10 +104,16 @@ export class UIAAutoClicker {
   public async findBusyIndicator(opts: { silent?: boolean } = {}): Promise<string | null> {
     if (!this.isEnabled()) return null;
     const names = this.getBusyNames();
+    const excludes = this.getBusyExcludes();
     const procs = this.getProcessNames();
     let result: UIAResult;
     try {
-      result = await runUIAFinder(names, procs, { probeOnly: true, exactOnly: true });
+      result = await runUIAFinder(names, procs, {
+        probeOnly: true,
+        containsMode: true,
+        excludePatterns: excludes,
+        widerControls: true,
+      });
     } catch (err: unknown) {
       const reason = err instanceof Error ? err.message : String(err);
       if (!opts.silent) {
@@ -95,6 +131,15 @@ export class UIAAutoClicker {
       return raw.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
     }
     return UIAAutoClicker.DEFAULT_BUSY_NAMES;
+  }
+
+  private getBusyExcludes(): string[] {
+    const cfg = vscode.workspace.getConfiguration(this.cfgSection);
+    const raw = cfg.get<unknown>("uia.busyExcludePatterns");
+    if (Array.isArray(raw) && raw.length > 0) {
+      return raw.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+    }
+    return UIAAutoClicker.DEFAULT_BUSY_EXCLUDES;
   }
 
   private getNames(intent: "allow" | "keep"): string[] {
@@ -181,12 +226,25 @@ type UIAResult = {
   };
 };
 
-function runUIAFinder(names: string[], processNames: string[], opts: { probeOnly?: boolean; exactOnly?: boolean } = {}): Promise<UIAResult> {
+function runUIAFinder(
+  names: string[],
+  processNames: string[],
+  opts: {
+    probeOnly?: boolean;
+    exactOnly?: boolean;
+    containsMode?: boolean;
+    excludePatterns?: string[];
+    widerControls?: boolean;
+  } = {}
+): Promise<UIAResult> {
   return new Promise((resolve, reject) => {
     const namesJson = JSON.stringify(names);
     const procsJson = JSON.stringify(processNames);
+    const excludesJson = JSON.stringify(opts.excludePatterns ?? []);
     const probeOnly = opts.probeOnly ? "$true" : "$false";
     const exactOnly = opts.exactOnly ? "$true" : "$false";
+    const containsMode = opts.containsMode ? "$true" : "$false";
+    const widerControls = opts.widerControls ? "$true" : "$false";
     const startedAt = Date.now();
     // PowerShell: scope by process, walk descendants, return JSON with the
     // matched name (if any) plus diagnostics about what UIA actually saw.
@@ -202,8 +260,11 @@ Add-Type -AssemblyName UIAutomationTypes  | Out-Null
 
 $names = '${namesJson.replace(/'/g, "''")}' | ConvertFrom-Json
 $procs = '${procsJson.replace(/'/g, "''")}' | ConvertFrom-Json
+$customExcludes = '${excludesJson.replace(/'/g, "''")}' | ConvertFrom-Json
 $probeOnly = ${probeOnly}
 $exactOnly = ${exactOnly}
+$containsMode = ${containsMode}
+$widerControls = ${widerControls}
 
 $diag = @{
   pids = @()
@@ -232,6 +293,16 @@ $typesToSearch = @(
   [System.Windows.Automation.ControlType]::Hyperlink,
   [System.Windows.Automation.ControlType]::MenuItem
 )
+if ($widerControls) {
+  # Busy probe: include passive UI elements too. VS Code shows "Loading",
+  # "QUEUED", and progress spinners as Text/Group/ProgressBar/Image, NOT
+  # as buttons, so a button-only scan misses them entirely.
+  $typesToSearch += [System.Windows.Automation.ControlType]::Text
+  $typesToSearch += [System.Windows.Automation.ControlType]::Group
+  $typesToSearch += [System.Windows.Automation.ControlType]::ProgressBar
+  $typesToSearch += [System.Windows.Automation.ControlType]::Image
+  $typesToSearch += [System.Windows.Automation.ControlType]::StatusBar
+}
 $typeConds = @()
 foreach ($t in $typesToSearch) {
   $typeConds += New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, $t)
@@ -266,6 +337,11 @@ foreach ($n in $names) { if ($n) { $normNames += $n.ToString().Trim().ToLowerInv
 # scan, which then re-enters pressAllow / pressKeep, looping forever.
 $excludePrefixes = @("press ")
 
+# Caller-supplied substring excludes (busy probe uses these to filter out
+# debug-toolbar buttons whose names contain "(Shift+F5)" etc.).
+$excludeSubstrings = @()
+foreach ($e in $customExcludes) { if ($e) { $excludeSubstrings += $e.ToString().Trim().ToLowerInvariant() } }
+
 $matched = $null
 $candidates = New-Object System.Collections.Generic.HashSet[string]
 $totalControls = 0
@@ -283,15 +359,23 @@ foreach ($wins in $windowsByPid.Values) {
         foreach ($pfx in $excludePrefixes) {
           if ($normCtrl.StartsWith($pfx)) { $excluded = $true; break }
         }
+        if (-not $excluded) {
+          foreach ($sub in $excludeSubstrings) {
+            if ($normCtrl.Contains($sub)) { $excluded = $true; break }
+          }
+        }
         if ($excluded) {
           if ($candidates.Count -lt 60) { [void]$candidates.Add($ctrlName) }
           continue
         }
         $hit = $false
         foreach ($wanted in $normNames) {
-          # Equals or StartsWith only — Contains is far too loose. It used
-          # to match "Press \"Allow\"" against "Allow" and click our own UI.
-          if ($exactOnly) {
+          if ($containsMode) {
+            # Probe mode: look for the keyword anywhere in the name. Used
+            # only for the busy detector -- combined with the exclude list
+            # this catches inline "Loading"/"QUEUED"/"Generating" labels.
+            if ($normCtrl.Contains($wanted)) { $hit = $true; break }
+          } elseif ($exactOnly) {
             if ($normCtrl -eq $wanted) { $hit = $true; break }
           } elseif ($normCtrl -eq $wanted -or $normCtrl.StartsWith($wanted)) {
             $hit = $true
@@ -302,7 +386,14 @@ foreach ($wins in $windowsByPid.Values) {
           if ($candidates.Count -lt 60) { [void]$candidates.Add($ctrlName) }
           continue
         }
-        if (-not $ctrl.Current.IsEnabled -or $ctrl.Current.IsOffscreen) { continue }
+        # In probe mode we don't require IsEnabled — passive labels like
+        # "Loading" and "QUEUED" are not enabled controls but still prove
+        # the chat is active.
+        if (-not $probeOnly) {
+          if (-not $ctrl.Current.IsEnabled -or $ctrl.Current.IsOffscreen) { continue }
+        } elseif ($ctrl.Current.IsOffscreen) {
+          continue
+        }
         if ($probeOnly) {
           # Just record the match; do not Invoke.
           $matched = $ctrlName
