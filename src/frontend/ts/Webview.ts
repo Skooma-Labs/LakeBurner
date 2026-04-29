@@ -20,11 +20,20 @@ type ActivityEntry = {
 
 type PromptTarget = { id: string; label: string; command: string; mode: string };
 
+type ChatSessionRecord = {
+  id: string;
+  label: string;
+  firstSeenIso: string;
+  lastSeenIso: string;
+  turns: number;
+};
+
 type IncomingMessage =
   | { type: "lakeburner.providers"; providers: ProviderInfo[] }
   | { type: "lakeburner.activity"; entries: ActivityEntry[] }
   | { type: "lakeburner.autoRun"; enabled: boolean }
   | { type: "lakeburner.prompt"; targets: PromptTarget[]; defaultPrompt: string }
+  | { type: "lakeburner.affectedChats"; sessions: ChatSessionRecord[]; allowedIds: string[] }
   | { type: "lakeburner.error"; reason: string };
 
 type OutgoingMessage =
@@ -36,6 +45,8 @@ type OutgoingMessage =
   | { type: "autoClick.calibrateAllow" }
   | { type: "prompt.send"; targetId: string; prompt: string }
   | { type: "prompt.saveDefault"; prompt: string }
+  | { type: "affectedChats.setAllowed"; id: string; allowed: boolean }
+  | { type: "affectedChats.clear" }
   | { type: "activity.clear" }
   | {
       type: "lakeburner.hostlog";
@@ -195,6 +206,55 @@ function renderPrompt(targets: PromptTarget[], defaultPrompt: string): void {
   }
 }
 
+function renderAffectedChats(sessions: ChatSessionRecord[], allowedIds: string[]): void {
+  const root = el<HTMLDivElement>("affected-chats");
+  if (!root) return;
+
+  root.innerHTML = "";
+
+  if (sessions.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "activity-empty";
+    empty.textContent = "No chats tracked yet. Use @lakeburner in any chat to register it.";
+    root.appendChild(empty);
+    return;
+  }
+
+  const allowed = new Set(allowedIds);
+
+  for (const s of sessions) {
+    const row = document.createElement("label");
+    row.className = "chat-row";
+    row.title = `id: ${s.id}\nturns: ${s.turns}\nlast: ${s.lastSeenIso}`;
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = allowed.has(s.id);
+    cb.addEventListener("change", () => {
+      log.user("ui.affectedChats.toggle", "Affected Chat Toggled", { id: s.id, allowed: cb.checked });
+      postMessageToHost({ type: "affectedChats.setAllowed", id: s.id, allowed: cb.checked });
+    });
+    row.appendChild(cb);
+
+    const meta = document.createElement("div");
+    meta.className = "chat-meta";
+
+    const label = document.createElement("span");
+    label.className = "chat-label";
+    label.textContent = s.label;
+    meta.appendChild(label);
+
+    const sub = document.createElement("span");
+    sub.className = "chat-sub";
+    const last = s.lastSeenIso ? s.lastSeenIso.replace("T", " ").slice(0, 19) : "";
+    sub.textContent = `${s.turns} turn${s.turns === 1 ? "" : "s"} · ${last}`;
+    meta.appendChild(sub);
+
+    row.appendChild(meta);
+    root.appendChild(row);
+  }
+}
+
 function bindButtons(): void {
   const autoRunBtn = el<HTMLButtonElement>("autoRunBtn");
   if (autoRunBtn) {
@@ -269,6 +329,14 @@ function bindButtons(): void {
       postMessageToHost({ type: "prompt.saveDefault", prompt });
     });
   }
+
+  const clearChatsBtn = el<HTMLButtonElement>("clearChatsBtn");
+  if (clearChatsBtn) {
+    clearChatsBtn.addEventListener("click", () => {
+      log.user("ui.affectedChats.clear", "Clear Affected Chats Clicked");
+      postMessageToHost({ type: "affectedChats.clear" });
+    });
+  }
 }
 
 function handleIncoming(message: IncomingMessage): void {
@@ -286,6 +354,9 @@ function handleIncoming(message: IncomingMessage): void {
       return;
     case "lakeburner.prompt":
       renderPrompt(message.targets ?? [], message.defaultPrompt ?? "");
+      return;
+    case "lakeburner.affectedChats":
+      renderAffectedChats(message.sessions ?? [], message.allowedIds ?? []);
       return;
     case "lakeburner.error":
       log.error("host", message.reason);

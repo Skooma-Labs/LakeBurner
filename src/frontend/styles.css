@@ -172,6 +172,56 @@ body {
   opacity: 0.85;
 }
 
+/* ----- Affected Chats ----- */
+.section-hint {
+  margin: 0 0 6px 0;
+  opacity: 0.7;
+  font-size: 11px;
+}
+
+.affected-chats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  border-radius: 6px;
+  border: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 94%, #000 6%);
+  padding: 6px;
+}
+
+.chat-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.chat-row:hover { background: var(--vscode-list-hoverBackground); }
+.chat-row input[type="checkbox"] { margin-top: 2px; }
+
+.chat-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.chat-label {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-sub {
+  font-size: 10px;
+  opacity: 0.6;
+}
+
 /* ----- Activity Log ----- */
 .activity-log {
   display: flex;

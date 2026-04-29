@@ -7,6 +7,7 @@ import type { ActivityLog, ActivityEntry } from "../../backend/ActivityLog";
 import type { AutoRunMode } from "../../backend/AutoRunMode";
 import type { AutoClicker } from "../../backend/AutoClicker";
 import type { PromptDispatcher, PromptTarget } from "../../backend/PromptDispatcher";
+import type { AffectedChats, ChatSessionRecord } from "../../backend/AffectedChats";
 
 type IncomingFromWebview =
   | { type: "webview.ready" }
@@ -17,6 +18,8 @@ type IncomingFromWebview =
   | { type: "autoClick.calibrateAllow" }
   | { type: "prompt.send"; targetId: string; prompt: string }
   | { type: "prompt.saveDefault"; prompt: string }
+  | { type: "affectedChats.setAllowed"; id: string; allowed: boolean }
+  | { type: "affectedChats.clear" }
   | { type: "activity.clear" }
   | HostLogEnvelope
   | { type: string; [key: string]: unknown };
@@ -26,6 +29,7 @@ type OutgoingToWebview =
   | { type: "lakeburner.activity"; entries: ActivityEntry[] }
   | { type: "lakeburner.autoRun"; enabled: boolean }
   | { type: "lakeburner.prompt"; targets: PromptTarget[]; defaultPrompt: string }
+  | { type: "lakeburner.affectedChats"; sessions: ChatSessionRecord[]; allowedIds: string[] }
   | { type: "lakeburner.error"; reason: string };
 
 function readMessageType(value: unknown): string | undefined {
@@ -56,7 +60,8 @@ export class WebviewHost implements vscode.WebviewViewProvider {
     private readonly activity: ActivityLog,
     private readonly autoRun: AutoRunMode,
     private readonly autoClicker: AutoClicker,
-    private readonly dispatcher: PromptDispatcher
+    private readonly dispatcher: PromptDispatcher,
+    private readonly affected: AffectedChats
   ) {}
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -106,6 +111,7 @@ export class WebviewHost implements vscode.WebviewViewProvider {
             this.broadcastActivity();
             this.broadcastAutoRun();
             this.broadcastPrompt();
+            this.broadcastAffectedChats();
             return;
           }
 
@@ -178,6 +184,19 @@ export class WebviewHost implements vscode.WebviewViewProvider {
             return;
           }
 
+          case "affectedChats.setAllowed": {
+            const id = String((incoming as { id?: unknown }).id ?? "").trim();
+            const allowed = !!(incoming as { allowed?: unknown }).allowed;
+            if (!id) return;
+            await this.affected.setAllowed(id, allowed);
+            return;
+          }
+
+          case "affectedChats.clear": {
+            await this.affected.clear();
+            return;
+          }
+
           default:
             this.logger.info({ fn: "onDidReceiveMessage" }, "Message Type Ignored", { type: incoming.type });
             return;
@@ -208,6 +227,14 @@ export class WebviewHost implements vscode.WebviewViewProvider {
       type: "lakeburner.prompt",
       targets: this.dispatcher.listTargets(),
       defaultPrompt: this.dispatcher.getDefaultPrompt(),
+    });
+  }
+
+  public broadcastAffectedChats(): void {
+    void this.postMessageToWebview({
+      type: "lakeburner.affectedChats",
+      sessions: this.affected.list(),
+      allowedIds: this.affected.listAllowedIds(),
     });
   }
 
@@ -284,6 +311,15 @@ export class WebviewHost implements vscode.WebviewViewProvider {
         <button id="savePromptBtn" class="btnSmall" type="button" title="Save current text as the default prompt.">Save Default</button>
       </div>
     </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2 class="section-title">Affected Chats</h2>
+      <button id="clearChatsBtn" class="btnSmall" type="button" title="Clear all tracked chats and the allowlist.">Clear</button>
+    </div>
+    <p class="section-hint">Chats you've invoked <code>@lakeburner</code> in. Tick a chat to let Auto-Run press Allow / Keep on its behalf.</p>
+    <div id="affected-chats" class="affected-chats" aria-live="polite"></div>
   </section>
 
   <section class="section">

@@ -2,7 +2,7 @@
   "name": "lakeburner",
   "displayName": "LakeBurner",
   "description": "User-Approval Harness for AI coding assistants. Sits beside Copilot Chat, Claude Code, and Codex inside VS Code, monitors their presence, and gates risky actions through @lakeburner.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "JBLDotExe",
   "license": "MIT",
   "repository": {
@@ -259,6 +259,47 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "When `true`, the Auto-Run ticker only fires while the VS Code window is focused. Prevents background ticks from approving things while you're working in another app.",
+          "scope": "application"
+        },
+        "lakeburner.affectedChats.windowDays": {
+          "type": "number",
+          "default": 3,
+          "minimum": 1,
+          "markdownDescription": "How many days of chat history to keep visible in the **Affected Chats** list. Sessions older than this are pruned automatically.",
+          "scope": "application"
+        },
+        "lakeburner.affectedChats.recentActivityMs": {
+          "type": "number",
+          "default": 60000,
+          "minimum": 1000,
+          "markdownDescription": "The Auto-Run ticker only fires while at least one allow-listed chat session has been active within this many milliseconds. Default `60000` (1 minute).",
+          "scope": "application"
+        },
+        "lakeburner.uia.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Enable the Windows UI Automation strategy for pressing Allow / Keep buttons. Searches the accessibility tree of VS Code's process for a button by accessible name and invokes it without moving the mouse. Far more robust than the fixed-coordinate fallback. Windows-only.",
+          "scope": "application"
+        },
+        "lakeburner.uia.allowButtonNames": {
+          "type": "array",
+          "default": [],
+          "markdownDescription": "Override the list of accessible button names the UIA finder will treat as **Allow**. Leave empty for built-in defaults (`Allow Once`, `Allow in this Session`, `Allow in this Workspace`, `Allow`, `Continue`).",
+          "items": { "type": "string" },
+          "scope": "application"
+        },
+        "lakeburner.uia.keepButtonNames": {
+          "type": "array",
+          "default": [],
+          "markdownDescription": "Override the list of accessible button names the UIA finder will treat as **Keep**. Leave empty for built-in defaults (`Keep`, `Apply`, `Apply and next`, `Accept`, `Accept All`).",
+          "items": { "type": "string" },
+          "scope": "application"
+        },
+        "lakeburner.uia.processNames": {
+          "type": "array",
+          "default": [],
+          "markdownDescription": "Process names whose top-level windows the UIA finder will scan. Leave empty for built-in defaults (`Code`, `Code - Insiders`). Restrict to your editor's process so we never click buttons in other apps.",
+          "items": { "type": "string" },
           "scope": "application"
         },
         "lakeburner.initialPrompt.default": {

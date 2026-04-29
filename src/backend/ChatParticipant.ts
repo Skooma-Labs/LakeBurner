@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import type { Logger } from "../frontend/ts/TSLogger";
 import type { ActivityLog } from "./ActivityLog";
 import type { AutoRunMode } from "./AutoRunMode";
+import type { AffectedChats } from "./AffectedChats";
 
 const PARTICIPANT_ID = "lakeburner.harness";
 
@@ -22,34 +23,48 @@ export function registerLakeBurnerParticipant(
   logger: Logger,
   activity: ActivityLog,
   autoRun: AutoRunMode,
-  cfgSection: string
+  cfgSection: string,
+  affected: AffectedChats
 ): void {
   if (!vscode.chat || typeof vscode.chat.createChatParticipant !== "function") {
     logger.warn({ fn: "registerLakeBurnerParticipant" }, "Chat API Unavailable; Skipping Participant Registration");
     return;
   }
 
-  const handler: vscode.ChatRequestHandler = async (request, _ctx, stream, token) => {
+  const handler: vscode.ChatRequestHandler = async (request, ctx, stream, token) => {
     const command = (request.command as LakeBurnerCommand) ?? undefined;
     const prompt = (request.prompt ?? "").trim();
+
+    // Find the conversation's first user prompt (used for stable session ID).
+    let firstPrompt = prompt;
+    const history = (ctx?.history ?? []) as readonly vscode.ChatRequestTurn[];
+    for (const turn of history) {
+      const turnPrompt = (turn as { prompt?: string }).prompt;
+      if (typeof turnPrompt === "string" && turnPrompt.trim()) {
+        firstPrompt = turnPrompt;
+        break;
+      }
+    }
+    const sessionId = affected.registerTurn(firstPrompt, prompt);
 
     activity.add("REQUEST", `@lakeburner ${command ?? ""} ${prompt}`.trim(), {
       command,
       promptLength: prompt.length,
+      sessionId,
     });
 
-    if (token.isCancellationRequested) return { metadata: { cancelled: true } };
+    if (token.isCancellationRequested) return { metadata: { cancelled: true, sessionId } };
 
     switch (command) {
       case "approve":
-        return await handleApprove(prompt, stream, activity, autoRun);
+        return await handleApprove(prompt, stream, activity, autoRun, sessionId);
 
       case "context":
-        return await handleContext(prompt, stream, activity, cfgSection);
+        return await handleContext(prompt, stream, activity, cfgSection, sessionId);
 
       case "advise":
       default:
-        return await handleAdvise(prompt, stream, activity, autoRun);
+        return await handleAdvise(prompt, stream, activity, autoRun, sessionId);
     }
   };
 
@@ -66,16 +81,17 @@ async function handleApprove(
   prompt: string,
   stream: vscode.ChatResponseStream,
   activity: ActivityLog,
-  autoRun: AutoRunMode
+  autoRun: AutoRunMode,
+  sessionId: string
 ): Promise<vscode.ChatResult> {
   const action = prompt || "the proposed action";
 
   stream.markdown(`**LakeBurner — Approval Harness**\n\nRequesting user approval for: \`${action}\`\n\n`);
 
   if (autoRun.isEnabled) {
-    activity.add("APPROVE", `Auto-approved: ${action}`, { source: "chat-participant", auto: true });
+    activity.add("APPROVE", `Auto-approved: ${action}`, { source: "chat-participant", auto: true, sessionId });
     stream.markdown(`⚡ **Auto-approved.** Auto-Run is ON — proceed with \`${action}\`.\n`);
-    return { metadata: { decision: "approve", auto: true } };
+    return { metadata: { decision: "approve", auto: true, sessionId } };
   }
 
   const choice = await vscode.window.showInformationMessage(
@@ -86,24 +102,25 @@ async function handleApprove(
   );
 
   if (choice === "Approve") {
-    activity.add("APPROVE", `User approved: ${action}`);
+    activity.add("APPROVE", `User approved: ${action}`, { sessionId });
     stream.markdown(`✅ **Approved.** Copilot may proceed with \`${action}\`.\n`);
-    return { metadata: { decision: "approve" } };
+    return { metadata: { decision: "approve", sessionId } };
   }
 
   // Default to the safest direction on cancel or block.
-  activity.add("BLOCK", `User blocked (or did not approve): ${action}`);
+  activity.add("BLOCK", `User blocked (or did not approve): ${action}`, { sessionId });
   stream.markdown(
     `🛑 **Blocked.** LakeBurner defaults to the **safest direction**: do not perform \`${action}\` without explicit user instruction.\n`
   );
-  return { metadata: { decision: "block" } };
+  return { metadata: { decision: "block", sessionId } };
 }
 
 async function handleContext(
   prompt: string,
   stream: vscode.ChatResponseStream,
   activity: ActivityLog,
-  cfgSection: string
+  cfgSection: string,
+  sessionId: string
 ): Promise<vscode.ChatResult> {
   const topic = prompt || "general workspace context";
 
@@ -120,22 +137,23 @@ async function handleContext(
   }
   stream.markdown(`- Debug level: \`${cfg.get("debugLevel", "Basic")}\`\n`);
 
-  activity.add("INFO", `Context delivered: ${topic}`);
-  return { metadata: { topic } };
+  activity.add("INFO", `Context delivered: ${topic}`, { sessionId });
+  return { metadata: { topic, sessionId } };
 }
 
 async function handleAdvise(
   prompt: string,
   stream: vscode.ChatResponseStream,
   activity: ActivityLog,
-  autoRun: AutoRunMode
+  autoRun: AutoRunMode,
+  sessionId: string
 ): Promise<vscode.ChatResult> {
   const plan = prompt || "(no plan provided)";
 
   if (autoRun.isEnabled) {
     stream.markdown(`**LakeBurner — Auto-Run Direction**\n\n> ${autoRun.trustPhrase}\n`);
-    activity.add("APPROVE", `Auto-direction: ${autoRun.trustPhrase}`, { plan, source: "chat-participant", auto: true });
-    return { metadata: { decision: "trust", auto: true } };
+    activity.add("APPROVE", `Auto-direction: ${autoRun.trustPhrase}`, { plan, source: "chat-participant", auto: true, sessionId });
+    return { metadata: { decision: "trust", auto: true, sessionId } };
   }
 
   stream.markdown(`**LakeBurner — Safe-Direction Advisor**\n\n`);
@@ -148,6 +166,6 @@ async function handleAdvise(
       `Use \`@lakeburner approve <action>\` to gate any of the above.\n`
   );
 
-  activity.add("INFO", `Advice issued for plan: ${plan}`);
-  return { metadata: { plan } };
+  activity.add("INFO", `Advice issued for plan: ${plan}`, { sessionId });
+  return { metadata: { plan, sessionId } };
 }

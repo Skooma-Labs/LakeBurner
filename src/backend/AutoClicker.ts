@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { spawn } from "child_process";
 import type { Logger } from "../frontend/ts/TSLogger";
 import type { ActivityLog } from "./ActivityLog";
+import type { UIAAutoClicker } from "./UIAAutoClicker";
 
 /**
  * AutoClicker — best-effort "press the Keep button" pipeline.
@@ -26,7 +27,8 @@ export class AutoClicker {
     private readonly cfgSection: string,
     private readonly logger: Logger,
     private readonly activity: ActivityLog,
-    private readonly context: vscode.ExtensionContext
+    private readonly context: vscode.ExtensionContext,
+    private readonly uia: UIAAutoClicker
   ) {}
 
   // Defaults derived from GitHub Copilot Chat 0.45.x — see the Copilot Chat
@@ -165,20 +167,26 @@ export class AutoClicker {
   }
 
   /**
-   * Combined entry point — try commands first, fall back to coordinates if
-   * every command failed AND the fallback is enabled.
+   * Combined entry point — try commands first, then UIA (button-by-name within
+   * VS Code's process), then the brittle fixed-coordinate fallback.
    */
-  public async pressKeep(opts: { silent?: boolean } = {}): Promise<{ ok: boolean; via: "command" | "coordinate" | "none"; commandId?: string }> {
+  public async pressKeep(opts: { silent?: boolean } = {}): Promise<{ ok: boolean; via: "command" | "uia" | "coordinate" | "none"; commandId?: string; uiaName?: string }> {
     const commandId = await this.pressKeepViaCommand(opts);
     if (commandId) return { ok: true, via: "command", commandId };
+
+    const uiaName = await this.uia.pressKeep(opts);
+    if (uiaName) return { ok: true, via: "uia", uiaName };
 
     const ok = await this.pressKeepViaCoordinates(opts);
     return { ok, via: ok ? "coordinate" : "none" };
   }
 
-  public async pressAllow(opts: { silent?: boolean } = {}): Promise<{ ok: boolean; via: "command" | "coordinate" | "none"; commandId?: string }> {
+  public async pressAllow(opts: { silent?: boolean } = {}): Promise<{ ok: boolean; via: "command" | "uia" | "coordinate" | "none"; commandId?: string; uiaName?: string }> {
     const commandId = await this.pressAllowViaCommand(opts);
     if (commandId) return { ok: true, via: "command", commandId };
+
+    const uiaName = await this.uia.pressAllow(opts);
+    if (uiaName) return { ok: true, via: "uia", uiaName };
 
     const ok = await this.pressAllowViaCoordinates(opts);
     return { ok, via: ok ? "coordinate" : "none" };

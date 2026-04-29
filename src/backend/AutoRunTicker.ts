@@ -2,12 +2,19 @@ import * as vscode from "vscode";
 import type { Logger } from "../frontend/ts/TSLogger";
 import type { AutoRunMode } from "./AutoRunMode";
 import type { AutoClicker } from "./AutoClicker";
+import type { AffectedChats } from "./AffectedChats";
 
 /**
- * Drives the silent "press Keep + press Allow" loop while Auto-Run is on.
- * Polls every `lakeburner.autoRun.tickIntervalMs` (default 2500ms; 0 disables).
+ * Drives the silent "press Allow + press Keep" loop while Auto-Run is on.
+ * Polls every `lakeburner.autoRun.tickIntervalMs` (default 0; opt-in only).
  *
- * Uses `silent: true` on the AutoClicker so misses don't spam the activity log.
+ * Guards (all must pass for a tick to fire):
+ *   - Auto-Run is ON
+ *   - tickIntervalMs > 0
+ *   - VS Code window is focused (when requireWindowFocus = true)
+ *   - At least one allow-listed chat session has been active within
+ *     `affectedChats.recentActivityMs` (default 60s). If the allowlist is
+ *     empty the ticker is effectively disabled — you must opt-in per chat.
  */
 export class AutoRunTicker implements vscode.Disposable {
   private timer: NodeJS.Timeout | null = null;
@@ -17,7 +24,8 @@ export class AutoRunTicker implements vscode.Disposable {
     private readonly cfgSection: string,
     private readonly logger: Logger,
     private readonly autoRun: AutoRunMode,
-    private readonly autoClicker: AutoClicker
+    private readonly autoClicker: AutoClicker,
+    private readonly affected: AffectedChats
   ) {}
 
   public start(context: vscode.ExtensionContext): void {
@@ -64,6 +72,9 @@ export class AutoRunTicker implements vscode.Disposable {
     const cfg = vscode.workspace.getConfiguration(this.cfgSection);
     const requireFocus = cfg.get<boolean>("autoRun.requireWindowFocus", true);
     if (requireFocus && !vscode.window.state.focused) return;
+
+    const recentMs = cfg.get<number>("affectedChats.recentActivityMs", 60000);
+    if (!this.affected.hasRecentAllowedActivity(recentMs)) return;
 
     this.inFlight = true;
     try {

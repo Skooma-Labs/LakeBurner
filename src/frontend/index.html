@@ -63,6 +63,15 @@
 
     <section class="section">
       <div class="section-head">
+        <h2 class="section-title">Affected Chats</h2>
+        <button id="clearChatsBtn" class="btnSmall" type="button" title="Clear all tracked chats and the allowlist.">Clear</button>
+      </div>
+      <p class="section-hint">Chats you've invoked <code>@lakeburner</code> in. Tick a chat to let Auto-Run press Allow / Keep on its behalf.</p>
+      <div id="affected-chats" class="affected-chats" aria-live="polite"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
         <h2 class="section-title">Activity</h2>
         <button id="clearActivityBtn" class="btnSmall" type="button">Clear</button>
       </div>

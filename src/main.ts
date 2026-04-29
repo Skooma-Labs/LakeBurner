@@ -7,7 +7,9 @@ import { ActivityLog } from "./backend/ActivityLog";
 import { AutoRunMode } from "./backend/AutoRunMode";
 import { registerLakeBurnerLmTools } from "./backend/LmTools";
 import { AutoClicker } from "./backend/AutoClicker";
+import { UIAAutoClicker } from "./backend/UIAAutoClicker";
 import { AutoRunTicker } from "./backend/AutoRunTicker";
+import { AffectedChats } from "./backend/AffectedChats";
 import { PromptDispatcher } from "./backend/PromptDispatcher";
 
 const CFG_SECTION = "lakeburner";
@@ -19,12 +21,14 @@ export function activate(context: vscode.ExtensionContext) {
   const activity = new ActivityLog(logger);
   const monitor = new ProviderMonitor(logger, CFG_SECTION);
   const autoRun = new AutoRunMode(context, logger);
-  const autoClicker = new AutoClicker(CFG_SECTION, logger, activity, context);
+  const affected = new AffectedChats(context, CFG_SECTION, logger);
+  const uia = new UIAAutoClicker(CFG_SECTION, logger, activity);
+  const autoClicker = new AutoClicker(CFG_SECTION, logger, activity, context, uia);
   const dispatcher = new PromptDispatcher(CFG_SECTION, logger, activity);
-  const ticker = new AutoRunTicker(CFG_SECTION, logger, autoRun, autoClicker);
+  const ticker = new AutoRunTicker(CFG_SECTION, logger, autoRun, autoClicker, affected);
   ticker.start(context);
 
-  const provider = new WebviewHost(context, CFG_SECTION, logger, monitor, activity, autoRun, autoClicker, dispatcher);
+  const provider = new WebviewHost(context, CFG_SECTION, logger, monitor, activity, autoRun, autoClicker, dispatcher, affected);
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("lakeburner-view", provider, {
@@ -35,8 +39,9 @@ export function activate(context: vscode.ExtensionContext) {
   monitor.start(context, () => provider.broadcastProviders());
   context.subscriptions.push(activity.onChange(() => provider.broadcastActivity()));
   context.subscriptions.push(autoRun.onChange(() => provider.broadcastAutoRun()));
+  context.subscriptions.push(affected.onChange(() => provider.broadcastAffectedChats()));
 
-  registerLakeBurnerParticipant(context, logger, activity, autoRun, CFG_SECTION);
+  registerLakeBurnerParticipant(context, logger, activity, autoRun, CFG_SECTION, affected);
   registerLakeBurnerLmTools(context, logger, autoRun, activity);
 
   context.subscriptions.push(
