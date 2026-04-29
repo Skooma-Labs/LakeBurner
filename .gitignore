@@ -1,0 +1,14 @@
+# Build output
+/dist/
+
+# Dependencies
+/node_modules/
+
+# VS Code workspace
+/.vscode/
+
+# Local / private files
+/VscPlate.todo
+
+# Ignore helper scripts prefixed with ignore.*
+**/ignore.*

@@ -1,0 +1,208 @@
+/* main.css */
+
+body {
+  margin: 0;
+  padding: 12px;
+  font-family: var(--vscode-font-family);
+  color: var(--vscode-foreground);
+  background: var(--vscode-sideBar-background);
+}
+
+h1 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 12px 0;
+  opacity: 0.85;
+}
+
+/* ----- Tasks / Buttons ----- */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.btn {
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  border-radius: 6px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.btn:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+/* ----- Mode Toggle ----- */
+
+.mode-toggle {
+  display: flex;
+  justify-content: stretch;
+  align-items: stretch;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.mode-btn {
+  flex: 1 1 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.25);
+  color: rgba(255, 255, 255, 0.9);
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+  text-align: center;
+}
+
+.mode-btn:first-child {
+  border-top-left-radius: 10px;
+  border-bottom-left-radius: 10px;
+}
+
+.mode-btn:last-child {
+  border-top-right-radius: 10px;
+  border-bottom-right-radius: 10px;
+  margin-left: -1px;
+}
+
+.mode-btn.is-active {
+  background: rgba(0, 120, 212, 0.45);
+  border-color: rgba(0, 120, 212, 0.65);
+}
+
+/* ----- Connection Settings (Collapsible) ----- */
+/*
+  Key guarantees:
+  - Only the BODY is hidden/shown
+  - Header always remains clickable
+  - No :has() selectors (avoid webview compatibility surprises)
+  - ID-scoped rules so you don't get “arrow rotates but body stays hidden”
+*/
+
+.collapsible {
+  margin-top: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 92%, #000 8%);
+  overflow: hidden; /* keeps rounded corners clean */
+}
+
+.collapsible-header {
+  padding: 10px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.collapsible-header:hover {
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 96%, #ffffff 4%);
+}
+
+.collapsible-header:active {
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 92%, #ffffff 8%);
+}
+
+.collapsible-header .title {
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.95;
+}
+
+.collapsible-header .arrow {
+  transition: transform 120ms ease-out;
+}
+
+/* Arrow rotates when expanded (collapsed class removed from container) */
+#connection-settings:not(.collapsed) .collapsible-header .arrow {
+  transform: rotate(90deg);
+}
+
+/* Body */
+.collapsible-body {
+  margin: 0;
+  padding: 12px;
+}
+
+/* Deterministic show/hide for THIS panel */
+#connection-settings.collapsed .collapsible-body {
+  display: none !important;
+}
+
+#connection-settings:not(.collapsed) .collapsible-body {
+  display: block !important;
+}
+
+/* ----- Settings Form ----- */
+
+.panel {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.field label {
+  display: block;
+  font-size: 11px;
+  margin-bottom: 6px;
+  opacity: 0.85;
+}
+
+.field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--vscode-input-border, rgba(128, 128, 128, 0.35));
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  outline: none;
+  font-size: 12px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.row .btnSmall {
+  flex: 0 0 auto;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.row .btnSmall:hover {
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
+}
+
+.hint {
+  margin-top: 10px;
+  font-size: 11px;
+  opacity: 0.75;
+  line-height: 1.35;
+}

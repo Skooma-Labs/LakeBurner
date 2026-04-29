@@ -1,0 +1,121 @@
+{
+  "name": "vscplate",
+  "displayName": "VscPlate",
+  "description": "A VS Code extension template with a webview sidebar and structured logging.",
+  "version": "0.1.0",
+  "publisher": "YourPublisher",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/you/vscplate"
+  },
+  "bugs": {
+    "url": "https://github.com/you/vscplate/issues"
+  },
+  "homepage": "https://github.com/you/vscplate#readme",
+  "keywords": [
+    "vscode",
+    "extension",
+    "template",
+    "webview"
+  ],
+  "categories": [
+    "Other"
+  ],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "icon": "resources/flame-icon.png",
+  "main": "./dist/main.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "vscplate.function01",
+        "title": "VscPlate: Function_01",
+        "category": "VscPlate"
+      },
+      {
+        "command": "vscplate.function02",
+        "title": "VscPlate: Function_02",
+        "category": "VscPlate"
+      },
+      {
+        "command": "vscplate.function03",
+        "title": "VscPlate: Function_03",
+        "category": "VscPlate"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "vscplate-container",
+          "title": "VscPlate",
+          "icon": "resources/flame-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "vscplate-container": [
+        {
+          "id": "vscplate-view",
+          "name": "",
+          "icon": "resources/flame-icon.svg",
+          "type": "webview"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "VscPlate",
+      "properties": {
+        "vscplate.url": {
+          "type": "string",
+          "default": "",
+          "description": "Service URL (e.g., https://your-service.example.com/).",
+          "scope": "application"
+        },
+        "vscplate.name": {
+          "type": "string",
+          "default": "",
+          "description": "Project or resource name.",
+          "scope": "application"
+        },
+        "vscplate.folder": {
+          "type": "string",
+          "default": "",
+          "description": "Local folder used by the extension for reading and writing files.",
+          "scope": "application"
+        },
+        "vscplate.debugLevel": {
+          "type": "string",
+          "default": "Basic",
+          "enum": [
+            "Silent",
+            "Basic",
+            "Loud"
+          ],
+          "enumDescriptions": [
+            "No Diagnostic Output Whatsoever.",
+            "User Options, Settings Changes, and Task Progress Only.",
+            "Full Verbose Diagnostics. The Kitchen Sink."
+          ],
+          "description": "The level of Verbosity Expected from VscPlate in your Console Output.",
+          "scope": "application"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "compile": "node node_modules/typescript/bin/tsc -p .",
+    "build-webview": "node node_scripts/build-webview.mjs",
+    "copy-static": "node node_scripts/dist-copy.js",
+    "build": "npm run clean && npm run compile && npm run build-webview && npm run copy-static",
+    "vscode:prepublish": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.3",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.25.12",
+    "typescript": "^5.0.0"
+  }
+}
