@@ -274,7 +274,7 @@ export class WebviewHost implements vscode.WebviewViewProvider {
   <title>LakeBurner</title>
 </head>
 <body>
-  <details class="section" open>
+  <details class="section">
     <summary class="section-summary"><h2 class="section-title">AI Providers</h2></summary>
     <div id="provider-list" class="provider-list"></div>
   </details>

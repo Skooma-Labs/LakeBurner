@@ -2,7 +2,7 @@
   "name": "lakeburner",
   "displayName": "LakeBurner",
   "description": "User-Approval Harness for AI coding assistants. Sits beside Copilot Chat, Claude Code, and Codex inside VS Code, monitors their presence, and gates risky actions through @lakeburner.",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "publisher": "JBLDotExe",
   "license": "MIT",
   "repository": {
@@ -264,9 +264,9 @@
         },
         "lakeburner.autoRun.tickIntervalMs": {
           "type": "number",
-          "default": 1500,
+          "default": 3000,
           "minimum": 0,
-          "markdownDescription": "Polling interval (milliseconds) for the Auto-Run ticker. While Auto-Run is ON, LakeBurner silently attempts **Allow** then **Keep** on this cadence so chat sessions stay unattended. **Default `1500`** — set to `0` to fully disable polling (Auto-Run will then only react to manual Press buttons). The Affected Chats list still gates which sessions are considered armed.",
+          "markdownDescription": "Polling interval (milliseconds) for the Auto-Run ticker. While Auto-Run is ON **and** at least one chat is on the Affected Chats list, LakeBurner silently attempts **Allow** then **Keep** on this cadence via UIA only (no focus stealing, no mouse movement). **Default `3000`** — set to `0` to fully disable polling. The ticker is paused automatically whenever the Affected Chats list is empty.",
           "scope": "application"
         },
         "lakeburner.autoRun.requireWindowFocus": {

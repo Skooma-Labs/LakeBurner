@@ -37,6 +37,10 @@ export class AutoRunTicker implements vscode.Disposable {
   public start(context: vscode.ExtensionContext): void {
     this.refresh();
     context.subscriptions.push(this.autoRun.onChange(() => this.refresh()));
+    // Refresh whenever the allowlist changes — we only want the timer running
+    // while at least one chat is armed. This makes the ticker effectively
+    // per-session: arming a chat starts polling, removing the last one stops it.
+    context.subscriptions.push(this.affected.onChange(() => this.refresh()));
     context.subscriptions.push(
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration(`${this.cfgSection}.autoRun.tickIntervalMs`)) this.refresh();
@@ -46,39 +50,56 @@ export class AutoRunTicker implements vscode.Disposable {
   }
 
   private refresh(): void {
-    this.stop();
-    if (!this.autoRun.isEnabled) return;
+    const wantTimer = this.shouldRun();
+    if (!wantTimer) {
+      this.stop();
+      return;
+    }
+    if (this.timer) return; // already running with the right config
 
     const cfg = vscode.workspace.getConfiguration(this.cfgSection);
     const interval = cfg.get<number>("autoRun.tickIntervalMs", 0);
-    if (!Number.isFinite(interval) || interval <= 0) {
-      this.activity.add(
-        "BLOCK",
-        `Ticker disabled — set "lakeburner.autoRun.tickIntervalMs" > 0 (try 1500) to enable polling.`,
-        { intervalMs: interval }
-      );
-      this.logger.info({ fn: "refresh" }, "Auto-Run Ticker Disabled (interval <= 0)");
-      return;
-    }
-
-    this.activity.add("INFO", `Ticker started @ every ${interval}ms`, { intervalMs: interval });
+    this.activity.add(
+      "INFO",
+      `Ticker started @ every ${interval}ms (armed chats: ${this.affected.listAllowedIds().length})`,
+      { intervalMs: interval, allowedCount: this.affected.listAllowedIds().length }
+    );
     this.logger.task({ fn: "refresh" }, "Auto-Run Ticker Started", { intervalMs: interval });
     this.timer = setInterval(() => void this.tick(), interval);
+  }
+
+  /**
+   * The ticker should only have a live timer when ALL of the following hold:
+   *   - Auto-Run is ON
+   *   - tickIntervalMs > 0
+   *   - At least one chat is on the allowlist
+   *
+   * The window-focus guard is intentionally NOT checked here — focus changes
+   * are too frequent to start/stop the timer on, so we honor it inside tick()
+   * with a quiet skip.
+   */
+  private shouldRun(): boolean {
+    if (!this.autoRun.isEnabled) return false;
+    const cfg = vscode.workspace.getConfiguration(this.cfgSection);
+    const interval = cfg.get<number>("autoRun.tickIntervalMs", 0);
+    if (!Number.isFinite(interval) || interval <= 0) return false;
+    if (this.affected.listAllowedIds().length === 0) return false;
+    return true;
   }
 
   private stop(): void {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
-      this.activity.add("INFO", "Ticker stopped");
+      this.activity.add("INFO", "Ticker stopped (no armed chats, Auto-Run off, or interval=0)");
       this.logger.info({ fn: "stop" }, "Auto-Run Ticker Stopped");
     }
   }
 
-  /** Log a skip reason at most once per 10s, or whenever the reason changes. */
+  /** Log a skip reason at most once per 30s, or whenever the reason changes. */
   private noteSkip(reason: string, data?: Record<string, unknown>): void {
     const now = Date.now();
-    if (reason !== this.lastSkipReason || now - this.lastSkipLoggedAt > 10000) {
+    if (reason !== this.lastSkipReason || now - this.lastSkipLoggedAt > 30000) {
       this.activity.add("INFO", `Ticker skipped: ${reason}`, { tickCount: this.tickCount, ...data });
       this.lastSkipReason = reason;
       this.lastSkipLoggedAt = now;
@@ -91,7 +112,9 @@ export class AutoRunTicker implements vscode.Disposable {
       this.noteSkip("previous tick still in flight");
       return;
     }
-    if (!this.autoRun.isEnabled) {
+    // Re-check the start guard cheaply — handles the race where Auto-Run was
+    // turned off or the allowlist emptied between intervals.
+    if (!this.shouldRun()) {
       this.stop();
       return;
     }
@@ -100,12 +123,6 @@ export class AutoRunTicker implements vscode.Disposable {
     const requireFocus = cfg.get<boolean>("autoRun.requireWindowFocus", true);
     if (requireFocus && !vscode.window.state.focused) {
       this.noteSkip("VS Code window not focused");
-      return;
-    }
-
-    const recentMs = cfg.get<number>("affectedChats.recentActivityMs", 60000);
-    if (!this.affected.hasRecentAllowedActivity(recentMs)) {
-      this.noteSkip("no allow-listed chat sessions", { allowedCount: this.affected.listAllowedIds().length });
       return;
     }
 
