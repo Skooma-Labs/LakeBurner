@@ -327,7 +327,7 @@ export class WebviewHost implements vscode.WebviewViewProvider {
     <div id="affected-chats" class="affected-chats" aria-live="polite"></div>
   </details>
 
-  <details class="section">
+  <details class="section" open>
     <summary class="section-summary">
       <h2 class="section-title">Activity</h2>
       <button id="clearActivityBtn" class="btnSmall section-action" type="button">Clear</button>
