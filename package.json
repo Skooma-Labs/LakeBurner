@@ -2,7 +2,7 @@
   "name": "lakeburner",
   "displayName": "LakeBurner",
   "description": "User-Approval Harness for AI coding assistants. Sits beside Copilot Chat, Claude Code, and Codex inside VS Code, monitors their presence, and gates risky actions through @lakeburner.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "JBLDotExe",
   "license": "MIT",
   "repository": {
@@ -22,7 +22,8 @@
     "chat",
     "ai",
     "approval",
-    "harness"
+    "harness",
+    "auto-run"
   ],
   "categories": [
     "AI",
@@ -35,13 +36,24 @@
   "icon": "resources/flame-icon.png",
   "main": "./dist/main.js",
   "activationEvents": [
-    "onChatParticipant:lakeburner.harness"
+    "onChatParticipant:lakeburner.harness",
+    "onLanguageModelTool:lakeburner_decide"
   ],
   "contributes": {
     "commands": [
       {
-        "command": "lakeburner.function01",
-        "title": "LakeBurner: Function_01",
+        "command": "lakeburner.autoRun.toggle",
+        "title": "LakeBurner: Toggle Auto-Run",
+        "category": "LakeBurner"
+      },
+      {
+        "command": "lakeburner.autoClick.keep",
+        "title": "LakeBurner: Press Copilot \"Keep\" Button",
+        "category": "LakeBurner"
+      },
+      {
+        "command": "lakeburner.autoClick.calibrate",
+        "title": "LakeBurner: Calibrate Auto-Click Position",
         "category": "LakeBurner"
       }
     ],
@@ -87,17 +99,40 @@
         ]
       }
     ],
+    "languageModelTools": [
+      {
+        "name": "lakeburner_decide",
+        "displayName": "LakeBurner Decide",
+        "modelDescription": "Ask the user (via the LakeBurner harness) for approval of an action or for direction on which approach to take. When the user has Auto-Run enabled, returns instant approval or the trust phrase 'Keep going, I trust your intuitions'. Use this whenever you would otherwise need to pause and ask the user a yes/no question or which-direction question.",
+        "userDescription": "Routes Copilot's approval and direction questions through LakeBurner.",
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "lakeburner",
+        "icon": "resources/flame-icon.svg",
+        "tags": ["approval", "harness", "lakeburner"],
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": ["approve", "decide"],
+              "description": "'approve' for yes/no approval requests; 'decide' when asking which direction to take."
+            },
+            "question": {
+              "type": "string",
+              "description": "The question or proposed action being approved."
+            }
+          },
+          "required": ["question"]
+        }
+      }
+    ],
     "configuration": {
       "title": "LakeBurner",
       "properties": {
         "lakeburner.debugLevel": {
           "type": "string",
           "default": "Basic",
-          "enum": [
-            "Silent",
-            "Basic",
-            "Loud"
-          ],
+          "enum": ["Silent", "Basic", "Loud"],
           "enumDescriptions": [
             "No diagnostic output whatsoever.",
             "User options, settings changes, and task progress only.",
@@ -113,25 +148,40 @@
           "scope": "application",
           "items": {
             "oneOf": [
-              {
-                "type": "string"
-              },
+              { "type": "string" },
               {
                 "type": "object",
-                "required": [
-                  "id"
-                ],
+                "required": ["id"],
                 "properties": {
-                  "id": {
-                    "type": "string"
-                  },
-                  "label": {
-                    "type": "string"
-                  }
+                  "id": { "type": "string" },
+                  "label": { "type": "string" }
                 }
               }
             ]
           }
+        },
+        "lakeburner.autoClick.commandIds": {
+          "type": "array",
+          "default": [],
+          "markdownDescription": "Ordered list of VS Code command IDs to invoke when pressing the Copilot \"Keep\" button. Leave empty to use the built-in defaults (Copilot Chat 0.45.x review.apply / acceptDiff IDs). LakeBurner tries each in turn; the first that doesn't throw wins.",
+          "items": { "type": "string" },
+          "scope": "application"
+        },
+        "lakeburner.autoClick.fallbackEnabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "When `true` and every command ID failed, synthesize an OS-level mouse click at the calibrated `lakeburner.autoClick.fallbackPosition`. Windows-only. **Brittle** — breaks on layout/DPI/theme changes.",
+          "scope": "application"
+        },
+        "lakeburner.autoClick.fallbackPosition": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "Captured screen coordinates `{ x, y }` for the OS-click fallback. Set this with the **LakeBurner: Calibrate Auto-Click Position** command.",
+          "properties": {
+            "x": { "type": "number" },
+            "y": { "type": "number" }
+          },
+          "scope": "application"
         }
       }
     }

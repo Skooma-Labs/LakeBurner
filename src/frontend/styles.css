@@ -47,8 +47,30 @@ body {
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 .btn:hover { background: var(--vscode-button-hoverBackground); }
+
+.btn-toggle .btn-state {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.3);
+}
+.btn-toggle[aria-pressed="true"] {
+  background: #2ecc71;
+  color: #0b1f10;
+}
+.btn-toggle[aria-pressed="true"] .btn-state {
+  background: rgba(0, 0, 0, 0.18);
+}
+.btn-toggle[aria-pressed="true"]:hover {
+  background: #27ae60;
+}
 
 .btnSmall {
   padding: 4px 8px;

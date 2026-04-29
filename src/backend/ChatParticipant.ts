@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import type { Logger } from "../frontend/ts/TSLogger";
 import type { ActivityLog } from "./ActivityLog";
+import type { AutoRunMode } from "./AutoRunMode";
 
 const PARTICIPANT_ID = "lakeburner.harness";
 
@@ -20,6 +21,7 @@ export function registerLakeBurnerParticipant(
   context: vscode.ExtensionContext,
   logger: Logger,
   activity: ActivityLog,
+  autoRun: AutoRunMode,
   cfgSection: string
 ): void {
   if (!vscode.chat || typeof vscode.chat.createChatParticipant !== "function") {
@@ -40,14 +42,14 @@ export function registerLakeBurnerParticipant(
 
     switch (command) {
       case "approve":
-        return await handleApprove(prompt, stream, activity);
+        return await handleApprove(prompt, stream, activity, autoRun);
 
       case "context":
         return await handleContext(prompt, stream, activity, cfgSection);
 
       case "advise":
       default:
-        return await handleAdvise(prompt, stream, activity);
+        return await handleAdvise(prompt, stream, activity, autoRun);
     }
   };
 
@@ -63,11 +65,18 @@ export function registerLakeBurnerParticipant(
 async function handleApprove(
   prompt: string,
   stream: vscode.ChatResponseStream,
-  activity: ActivityLog
+  activity: ActivityLog,
+  autoRun: AutoRunMode
 ): Promise<vscode.ChatResult> {
   const action = prompt || "the proposed action";
 
   stream.markdown(`**LakeBurner — Approval Harness**\n\nRequesting user approval for: \`${action}\`\n\n`);
+
+  if (autoRun.isEnabled) {
+    activity.add("APPROVE", `Auto-approved: ${action}`, { source: "chat-participant", auto: true });
+    stream.markdown(`⚡ **Auto-approved.** Auto-Run is ON — proceed with \`${action}\`.\n`);
+    return { metadata: { decision: "approve", auto: true } };
+  }
 
   const choice = await vscode.window.showInformationMessage(
     `LakeBurner is requesting approval for: ${action}`,
@@ -118,9 +127,16 @@ async function handleContext(
 async function handleAdvise(
   prompt: string,
   stream: vscode.ChatResponseStream,
-  activity: ActivityLog
+  activity: ActivityLog,
+  autoRun: AutoRunMode
 ): Promise<vscode.ChatResult> {
   const plan = prompt || "(no plan provided)";
+
+  if (autoRun.isEnabled) {
+    stream.markdown(`**LakeBurner — Auto-Run Direction**\n\n> ${autoRun.trustPhrase}\n`);
+    activity.add("APPROVE", `Auto-direction: ${autoRun.trustPhrase}`, { plan, source: "chat-participant", auto: true });
+    return { metadata: { decision: "trust", auto: true } };
+  }
 
   stream.markdown(`**LakeBurner — Safe-Direction Advisor**\n\n`);
   stream.markdown(`Proposed plan: \`${plan}\`\n\n`);

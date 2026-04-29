@@ -25,7 +25,19 @@
     <section class="section">
       <h2 class="section-title">Tasks</h2>
       <div class="stack">
-        <button class="btn" type="button" data-action="function01">Function_01</button>
+        <button id="autoRunBtn" class="btn btn-toggle" type="button" aria-pressed="false"
+                title="Auto-approve tool/Keep prompts. Replies 'Keep going, I trust your intuitions' when an assistant asks for direction.">
+          <span class="btn-label">Auto-Run</span>
+          <span class="btn-state" id="autoRunState">OFF</span>
+        </button>
+        <button id="pressKeepBtn" class="btn" type="button"
+                title="Try to press Copilot's Keep button via VS Code commands; falls back to a calibrated OS click if enabled.">
+          Press &ldquo;Keep&rdquo;
+        </button>
+        <button id="calibrateBtn" class="btnSmall" type="button"
+                title="Capture mouse position over Copilot's Keep button for the OS-click fallback.">
+          Calibrate Click Position
+        </button>
       </div>
     </section>
 

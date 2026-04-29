@@ -4,10 +4,14 @@ import * as crypto from "crypto";
 import { Logger, type HostLogEnvelope } from "./TSLogger";
 import type { ProviderMonitor, ProviderInfo } from "../../backend/ProviderMonitor";
 import type { ActivityLog, ActivityEntry } from "../../backend/ActivityLog";
+import type { AutoRunMode } from "../../backend/AutoRunMode";
+import type { AutoClicker } from "../../backend/AutoClicker";
 
 type IncomingFromWebview =
   | { type: "webview.ready" }
-  | { type: "function01" }
+  | { type: "autoRun.toggle" }
+  | { type: "autoClick.keep" }
+  | { type: "autoClick.calibrate" }
   | { type: "activity.clear" }
   | HostLogEnvelope
   | { type: string; [key: string]: unknown };
@@ -15,6 +19,7 @@ type IncomingFromWebview =
 type OutgoingToWebview =
   | { type: "lakeburner.providers"; providers: ProviderInfo[] }
   | { type: "lakeburner.activity"; entries: ActivityEntry[] }
+  | { type: "lakeburner.autoRun"; enabled: boolean }
   | { type: "lakeburner.error"; reason: string };
 
 function readMessageType(value: unknown): string | undefined {
@@ -42,7 +47,9 @@ export class WebviewHost implements vscode.WebviewViewProvider {
     private readonly cfgSection: string,
     private readonly logger: Logger,
     private readonly monitor: ProviderMonitor,
-    private readonly activity: ActivityLog
+    private readonly activity: ActivityLog,
+    private readonly autoRun: AutoRunMode,
+    private readonly autoClicker: AutoClicker
   ) {}
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -80,15 +87,34 @@ export class WebviewHost implements vscode.WebviewViewProvider {
             this.logger.info({ fn: "onDidReceiveMessage" }, "Webview Loaded Successfully");
             this.broadcastProviders();
             this.broadcastActivity();
+            this.broadcastAutoRun();
             return;
           }
 
-          case "function01": {
-            this.logger.user({ fn: "onDidReceiveMessage" }, "Function_01 Selected");
-            this.activity.add("INFO", "Function_01 invoked from sidebar");
-            vscode.window.showInformationMessage(
-              `LakeBurner: Function_01 fired. Try \`@lakeburner advise\` in Copilot Chat.`
+          case "autoRun.toggle": {
+            const next = await this.autoRun.toggle();
+            this.activity.add(
+              "INFO",
+              next ? "Auto-Run enabled — assistants will be auto-approved" : "Auto-Run disabled — manual approvals required",
+              { source: "sidebar" }
             );
+            return;
+          }
+
+          case "autoClick.keep": {
+            this.logger.user({ fn: "onDidReceiveMessage" }, "Press Keep Clicked");
+            const result = await this.autoClicker.pressKeep();
+            if (!result.ok) {
+              vscode.window.showWarningMessage(
+                "LakeBurner: no Keep command succeeded and the coordinate fallback is unavailable. See Output → LakeBurner."
+              );
+            }
+            return;
+          }
+
+          case "autoClick.calibrate": {
+            this.logger.user({ fn: "onDidReceiveMessage" }, "Calibrate Clicked");
+            await this.autoClicker.calibrateFallbackPosition();
             return;
           }
 
@@ -117,6 +143,10 @@ export class WebviewHost implements vscode.WebviewViewProvider {
 
   public broadcastActivity(): void {
     void this.postMessageToWebview({ type: "lakeburner.activity", entries: this.activity.list() });
+  }
+
+  public broadcastAutoRun(): void {
+    void this.postMessageToWebview({ type: "lakeburner.autoRun", enabled: this.autoRun.isEnabled });
   }
 
   private async postMessageToWebview(payload: OutgoingToWebview): Promise<boolean> {
@@ -158,7 +188,19 @@ export class WebviewHost implements vscode.WebviewViewProvider {
   <section class="section">
     <h2 class="section-title">Tasks</h2>
     <div class="stack">
-      <button class="btn" type="button" data-action="function01">Function_01</button>
+      <button id="autoRunBtn" class="btn btn-toggle" type="button" aria-pressed="false"
+              title="Auto-approve tool/Keep prompts. Replies 'Keep going, I trust your intuitions' when an assistant asks for direction.">
+        <span class="btn-label">Auto-Run</span>
+        <span class="btn-state" id="autoRunState">OFF</span>
+      </button>
+      <button id="pressKeepBtn" class="btn" type="button"
+              title="Try to press Copilot's Keep button via VS Code commands; falls back to a calibrated OS click if enabled.">
+        Press &ldquo;Keep&rdquo;
+      </button>
+      <button id="calibrateBtn" class="btnSmall" type="button"
+              title="Capture mouse position over Copilot's Keep button for the OS-click fallback.">
+        Calibrate Click Position
+      </button>
     </div>
   </section>
 

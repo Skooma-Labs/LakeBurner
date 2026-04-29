@@ -21,11 +21,14 @@ type ActivityEntry = {
 type IncomingMessage =
   | { type: "lakeburner.providers"; providers: ProviderInfo[] }
   | { type: "lakeburner.activity"; entries: ActivityEntry[] }
+  | { type: "lakeburner.autoRun"; enabled: boolean }
   | { type: "lakeburner.error"; reason: string };
 
 type OutgoingMessage =
   | { type: "webview.ready" }
-  | { type: "function01" }
+  | { type: "autoRun.toggle" }
+  | { type: "autoClick.keep" }
+  | { type: "autoClick.calibrate" }
   | { type: "activity.clear" }
   | {
       type: "lakeburner.hostlog";
@@ -128,7 +131,6 @@ function renderActivity(entries: ActivityEntry[]): void {
     return;
   }
 
-  // Newest first
   const sorted = entries.slice().sort((a, b) => b.id - a.id);
 
   for (const entry of sorted) {
@@ -154,16 +156,37 @@ function renderActivity(entries: ActivityEntry[]): void {
   }
 }
 
+function renderAutoRun(enabled: boolean): void {
+  const btn = el<HTMLButtonElement>("autoRunBtn");
+  const state = el<HTMLSpanElement>("autoRunState");
+  if (btn) btn.setAttribute("aria-pressed", enabled ? "true" : "false");
+  if (state) state.textContent = enabled ? "ON" : "OFF";
+}
+
 function bindButtons(): void {
-  document.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((btn) => {
-    const action = btn.getAttribute("data-action");
-    btn.addEventListener("click", () => {
-      if (action === "function01") {
-        log.user("ui.task.click", "Function_01 Clicked");
-        postMessageToHost({ type: "function01" });
-      }
+  const autoRunBtn = el<HTMLButtonElement>("autoRunBtn");
+  if (autoRunBtn) {
+    autoRunBtn.addEventListener("click", () => {
+      log.user("ui.autoRun.toggle", "Auto-Run Toggled");
+      postMessageToHost({ type: "autoRun.toggle" });
     });
-  });
+  }
+
+  const pressKeepBtn = el<HTMLButtonElement>("pressKeepBtn");
+  if (pressKeepBtn) {
+    pressKeepBtn.addEventListener("click", () => {
+      log.user("ui.autoClick.keep", "Press Keep Clicked");
+      postMessageToHost({ type: "autoClick.keep" });
+    });
+  }
+
+  const calibrateBtn = el<HTMLButtonElement>("calibrateBtn");
+  if (calibrateBtn) {
+    calibrateBtn.addEventListener("click", () => {
+      log.user("ui.autoClick.calibrate", "Calibrate Clicked");
+      postMessageToHost({ type: "autoClick.calibrate" });
+    });
+  }
 
   const clearBtn = el<HTMLButtonElement>("clearActivityBtn");
   if (clearBtn) {
@@ -183,6 +206,9 @@ function handleIncoming(message: IncomingMessage): void {
       return;
     case "lakeburner.activity":
       renderActivity(message.entries ?? []);
+      return;
+    case "lakeburner.autoRun":
+      renderAutoRun(!!message.enabled);
       return;
     case "lakeburner.error":
       log.error("host", message.reason);
