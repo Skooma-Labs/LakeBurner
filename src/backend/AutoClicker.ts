@@ -167,26 +167,53 @@ export class AutoClicker {
   }
 
   /**
-   * Combined entry point — try commands first, then UIA (button-by-name within
-   * VS Code's process), then the brittle fixed-coordinate fallback.
+   * Combined entry point. Default order is UIA → command → coordinate:
+   *
+   * UIA is preferred because it only succeeds when a real, visible, enabled
+   * button matching one of our accessible names is found and Invoke()'d in
+   * VS Code's own process. Several VS Code chat commands (notably
+   * `workbench.action.chat.acceptElicitation`) resolve without error even
+   * when nothing visible was pressed, which would otherwise mask UIA's
+   * far more reliable result.
+   *
+   * Set `lakeburner.autoClick.preferCommand = true` to flip back to the old
+   * command-first order.
    */
   public async pressKeep(opts: { silent?: boolean } = {}): Promise<{ ok: boolean; via: "command" | "uia" | "coordinate" | "none"; commandId?: string; uiaName?: string }> {
-    const commandId = await this.pressKeepViaCommand(opts);
-    if (commandId) return { ok: true, via: "command", commandId };
+    const preferCommand = vscode.workspace.getConfiguration(this.cfgSection).get<boolean>("autoClick.preferCommand", false);
+
+    if (preferCommand) {
+      const commandId = await this.pressKeepViaCommand(opts);
+      if (commandId) return { ok: true, via: "command", commandId };
+    }
 
     const uiaName = await this.uia.pressKeep(opts);
     if (uiaName) return { ok: true, via: "uia", uiaName };
+
+    if (!preferCommand) {
+      const commandId = await this.pressKeepViaCommand(opts);
+      if (commandId) return { ok: true, via: "command", commandId };
+    }
 
     const ok = await this.pressKeepViaCoordinates(opts);
     return { ok, via: ok ? "coordinate" : "none" };
   }
 
   public async pressAllow(opts: { silent?: boolean } = {}): Promise<{ ok: boolean; via: "command" | "uia" | "coordinate" | "none"; commandId?: string; uiaName?: string }> {
-    const commandId = await this.pressAllowViaCommand(opts);
-    if (commandId) return { ok: true, via: "command", commandId };
+    const preferCommand = vscode.workspace.getConfiguration(this.cfgSection).get<boolean>("autoClick.preferCommand", false);
+
+    if (preferCommand) {
+      const commandId = await this.pressAllowViaCommand(opts);
+      if (commandId) return { ok: true, via: "command", commandId };
+    }
 
     const uiaName = await this.uia.pressAllow(opts);
     if (uiaName) return { ok: true, via: "uia", uiaName };
+
+    if (!preferCommand) {
+      const commandId = await this.pressAllowViaCommand(opts);
+      if (commandId) return { ok: true, via: "command", commandId };
+    }
 
     const ok = await this.pressAllowViaCoordinates(opts);
     return { ok, via: ok ? "coordinate" : "none" };

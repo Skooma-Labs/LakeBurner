@@ -2,7 +2,7 @@
   "name": "lakeburner",
   "displayName": "LakeBurner",
   "description": "User-Approval Harness for AI coding assistants. Sits beside Copilot Chat, Claude Code, and Codex inside VS Code, monitors their presence, and gates risky actions through @lakeburner.",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "publisher": "JBLDotExe",
   "license": "MIT",
   "repository": {
@@ -209,6 +209,12 @@
           "type": "boolean",
           "default": false,
           "markdownDescription": "When `true` and every command ID failed, synthesize an OS-level mouse click at the calibrated `lakeburner.autoClick.fallbackPosition`. Windows-only. **Brittle** — breaks on layout/DPI/theme changes.",
+          "scope": "application"
+        },
+        "lakeburner.autoClick.preferCommand": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "When `true`, try VS Code commands **before** the UI Automation strategy. Default order is UIA → command → coordinate, because some chat commands (notably `workbench.action.chat.acceptElicitation`) resolve silently with no error even when nothing visible was pressed.",
           "scope": "application"
         },
         "lakeburner.autoClick.fallbackPosition": {
