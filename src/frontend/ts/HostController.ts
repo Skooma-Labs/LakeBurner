@@ -8,19 +8,18 @@ import type { AutoRunMode } from "../../backend/AutoRunMode";
 import type { AutoClicker } from "../../backend/AutoClicker";
 import type { PromptDispatcher, PromptTarget } from "../../backend/PromptDispatcher";
 import type { AffectedChats, ChatSessionRecord } from "../../backend/AffectedChats";
+import type { ActivityPopout } from "../../backend/ActivityPopout";
 
 type IncomingFromWebview =
   | { type: "webview.ready" }
   | { type: "autoRun.toggle" }
-  | { type: "autoClick.keep" }
-  | { type: "autoClick.allow" }
-  | { type: "autoClick.calibrate" }
-  | { type: "autoClick.calibrateAllow" }
   | { type: "prompt.send"; targetId: string; prompt: string }
   | { type: "prompt.saveDefault"; prompt: string }
   | { type: "affectedChats.setAllowed"; id: string; allowed: boolean }
   | { type: "affectedChats.clear" }
   | { type: "activity.clear" }
+  | { type: "activity.copy" }
+  | { type: "activity.popout" }
   | HostLogEnvelope
   | { type: string; [key: string]: unknown };
 
@@ -61,7 +60,8 @@ export class WebviewHost implements vscode.WebviewViewProvider {
     private readonly autoRun: AutoRunMode,
     private readonly autoClicker: AutoClicker,
     private readonly dispatcher: PromptDispatcher,
-    private readonly affected: AffectedChats
+    private readonly affected: AffectedChats,
+    private readonly popout: ActivityPopout
   ) {}
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -125,43 +125,35 @@ export class WebviewHost implements vscode.WebviewViewProvider {
             return;
           }
 
-          case "autoClick.keep": {
-            this.logger.user({ fn: "onDidReceiveMessage" }, "Press Keep Clicked");
-            const result = await this.autoClicker.pressKeep();
-            if (!result.ok) {
-              vscode.window.showWarningMessage(
-                "LakeBurner: no Keep command succeeded and the coordinate fallback is unavailable. See Output → LakeBurner."
-              );
-            }
-            return;
-          }
-
-          case "autoClick.allow": {
-            this.logger.user({ fn: "onDidReceiveMessage" }, "Press Allow Clicked");
-            const result = await this.autoClicker.pressAllow();
-            if (!result.ok) {
-              vscode.window.showWarningMessage(
-                "LakeBurner: no Allow command succeeded and the coordinate fallback is unavailable. See Output → LakeBurner."
-              );
-            }
-            return;
-          }
-
-          case "autoClick.calibrate": {
-            this.logger.user({ fn: "onDidReceiveMessage" }, "Calibrate Keep Clicked");
-            await this.autoClicker.calibrateFallbackPosition();
-            return;
-          }
-
-          case "autoClick.calibrateAllow": {
-            this.logger.user({ fn: "onDidReceiveMessage" }, "Calibrate Allow Clicked");
-            await this.autoClicker.calibrateAllowPosition();
-            return;
-          }
-
           case "activity.clear": {
             this.logger.user({ fn: "onDidReceiveMessage" }, "Activity Log Cleared");
             this.activity.clear();
+            return;
+          }
+
+          case "activity.copy": {
+            const text = this.activity
+              .list()
+              .slice()
+              .sort((a, b) => a.id - b.id)
+              .map((e) => {
+                const t = e.tsIso.slice(11, 19);
+                const head = `[${t}] ${e.kind} ${e.message}`;
+                if (e.data === undefined || e.data === null) return head;
+                let body: string;
+                try { body = JSON.stringify(e.data, null, 2); } catch { body = String(e.data); }
+                return `${head}\n  data: ${body.replace(/\n/g, "\n  ")}`;
+              })
+              .join("\n");
+            await vscode.env.clipboard.writeText(text);
+            this.logger.user({ fn: "onDidReceiveMessage" }, "Activity Log Copied", { entries: this.activity.list().length });
+            this.activity.add("INFO", `Activity log copied to clipboard (${this.activity.list().length} entries)`);
+            return;
+          }
+
+          case "activity.popout": {
+            this.logger.user({ fn: "onDidReceiveMessage" }, "Activity Popout Opened");
+            this.popout.open();
             return;
           }
 
@@ -287,22 +279,6 @@ export class WebviewHost implements vscode.WebviewViewProvider {
         <span class="btn-label">Auto-Run</span>
         <span class="btn-state" id="autoRunState">OFF</span>
       </button>
-      <button id="pressKeepBtn" class="btn" type="button"
-              title="Try to press Copilot's Keep button via VS Code commands; falls back to a calibrated OS click if enabled.">
-        Press &ldquo;Keep&rdquo;
-      </button>
-      <button id="pressAllowBtn" class="btn" type="button"
-              title="Try to press a chat tool-confirmation button (Allow Once / Allow in this Session); falls back to a calibrated OS click if enabled.">
-        Press &ldquo;Allow&rdquo;
-      </button>
-      <button id="calibrateBtn" class="btnSmall" type="button"
-              title="Capture mouse position over Copilot's Keep button for the OS-click fallback.">
-        Calibrate Keep Position
-      </button>
-      <button id="calibrateAllowBtn" class="btnSmall" type="button"
-              title="Capture mouse position over the Allow button for the OS-click fallback.">
-        Calibrate Allow Position
-      </button>
     </div>
   </details>
 
@@ -330,6 +306,8 @@ export class WebviewHost implements vscode.WebviewViewProvider {
   <details class="section" open>
     <summary class="section-summary">
       <h2 class="section-title">Activity</h2>
+      <button id="popoutActivityBtn" class="btnSmall section-action" type="button" title="Open Activity in a larger panel beside the editor for real-time monitoring">Popout</button>
+      <button id="copyActivityBtn" class="btnSmall section-action" type="button" title="Copy all activity entries to the clipboard">Copy</button>
       <button id="clearActivityBtn" class="btnSmall section-action" type="button">Clear</button>
     </summary>
     <div id="activity-log" class="activity-log" aria-live="polite"></div>

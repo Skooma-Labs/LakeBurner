@@ -40,6 +40,17 @@ export class UIAAutoClicker {
     "Accept All",
   ];
 
+  public static readonly DEFAULT_BUSY_NAMES = [
+    // Names of buttons VS Code shows in the chat input box / chat header
+    // while the assistant is actively generating. If any of these is present
+    // and enabled the chat is NOT idle and we must not send a Keep Going.
+    "Cancel",
+    "Stop",
+    "Stop generating",
+    "Cancel request",
+    "Cancel Editing Session",
+  ];
+
   public isEnabled(): boolean {
     if (process.platform !== "win32") return false;
     const cfg = vscode.workspace.getConfiguration(this.cfgSection);
@@ -52,6 +63,38 @@ export class UIAAutoClicker {
 
   public async pressKeep(opts: { silent?: boolean } = {}): Promise<string | null> {
     return this.pressByName("keep", "Keep", this.getNames("keep"), opts);
+  }
+
+  /**
+   * Probe-only UIA scan: returns the matched button name if a chat "busy"
+   * indicator (Cancel / Stop / Stop generating) is present and enabled,
+   * else null. Does NOT invoke any control. Used by AutoRunTicker to avoid
+   * sending the Keep Going prompt while an assistant is still streaming.
+   */
+  public async findBusyIndicator(opts: { silent?: boolean } = {}): Promise<string | null> {
+    if (!this.isEnabled()) return null;
+    const names = this.getBusyNames();
+    const procs = this.getProcessNames();
+    let result: UIAResult;
+    try {
+      result = await runUIAFinder(names, procs, { probeOnly: true, exactOnly: true });
+    } catch (err: unknown) {
+      const reason = err instanceof Error ? err.message : String(err);
+      if (!opts.silent) {
+        this.activity.add("INFO", `UIA busy probe failed to launch: ${reason}`, { strategy: "uia", probe: "busy" });
+      }
+      return null;
+    }
+    return result.matchedName ?? null;
+  }
+
+  private getBusyNames(): string[] {
+    const cfg = vscode.workspace.getConfiguration(this.cfgSection);
+    const raw = cfg.get<unknown>("uia.busyButtonNames");
+    if (Array.isArray(raw) && raw.length > 0) {
+      return raw.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+    }
+    return UIAAutoClicker.DEFAULT_BUSY_NAMES;
   }
 
   private getNames(intent: "allow" | "keep"): string[] {
@@ -138,20 +181,29 @@ type UIAResult = {
   };
 };
 
-function runUIAFinder(names: string[], processNames: string[]): Promise<UIAResult> {
+function runUIAFinder(names: string[], processNames: string[], opts: { probeOnly?: boolean; exactOnly?: boolean } = {}): Promise<UIAResult> {
   return new Promise((resolve, reject) => {
     const namesJson = JSON.stringify(names);
     const procsJson = JSON.stringify(processNames);
+    const probeOnly = opts.probeOnly ? "$true" : "$false";
+    const exactOnly = opts.exactOnly ? "$true" : "$false";
     const startedAt = Date.now();
     // PowerShell: scope by process, walk descendants, return JSON with the
     // matched name (if any) plus diagnostics about what UIA actually saw.
     const script = `
 $ErrorActionPreference = 'Stop'
+# Force stdout to UTF-8 — VS Code's button labels use smart quotes
+# (U+201C, U+201D) which would otherwise be mangled by the default
+# Windows codepage and corrupt our JSON output.
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 Add-Type -AssemblyName UIAutomationClient | Out-Null
 Add-Type -AssemblyName UIAutomationTypes  | Out-Null
 
 $names = '${namesJson.replace(/'/g, "''")}' | ConvertFrom-Json
 $procs = '${procsJson.replace(/'/g, "''")}' | ConvertFrom-Json
+$probeOnly = ${probeOnly}
+$exactOnly = ${exactOnly}
 
 $diag = @{
   pids = @()
@@ -208,6 +260,12 @@ if ($winCount -eq 0) {
 $normNames = @()
 foreach ($n in $names) { if ($n) { $normNames += $n.ToString().Trim().ToLowerInvariant() } }
 
+# Names of controls we will NEVER click — primarily LakeBurner's own
+# sidebar buttons whose accessible names contain "Allow" / "Keep" as
+# substrings. Without this guard the ticker clicks our own UI on every
+# scan, which then re-enters pressAllow / pressKeep, looping forever.
+$excludePrefixes = @("press ")
+
 $matched = $null
 $candidates = New-Object System.Collections.Generic.HashSet[string]
 $totalControls = 0
@@ -221,9 +279,21 @@ foreach ($wins in $windowsByPid.Values) {
         if (-not $ctrlName) { continue }
         $normCtrl = $ctrlName.Trim().ToLowerInvariant()
         if (-not $normCtrl) { continue }
+        $excluded = $false
+        foreach ($pfx in $excludePrefixes) {
+          if ($normCtrl.StartsWith($pfx)) { $excluded = $true; break }
+        }
+        if ($excluded) {
+          if ($candidates.Count -lt 60) { [void]$candidates.Add($ctrlName) }
+          continue
+        }
         $hit = $false
         foreach ($wanted in $normNames) {
-          if ($normCtrl -eq $wanted -or $normCtrl.StartsWith($wanted) -or $normCtrl.Contains($wanted)) {
+          # Equals or StartsWith only — Contains is far too loose. It used
+          # to match "Press \"Allow\"" against "Allow" and click our own UI.
+          if ($exactOnly) {
+            if ($normCtrl -eq $wanted) { $hit = $true; break }
+          } elseif ($normCtrl -eq $wanted -or $normCtrl.StartsWith($wanted)) {
             $hit = $true
             break
           }
@@ -233,6 +303,11 @@ foreach ($wins in $windowsByPid.Values) {
           continue
         }
         if (-not $ctrl.Current.IsEnabled -or $ctrl.Current.IsOffscreen) { continue }
+        if ($probeOnly) {
+          # Just record the match; do not Invoke.
+          $matched = $ctrlName
+          break
+        }
         $invokePatternObj = $null
         if ($ctrl.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$invokePatternObj)) {
           $invokePatternObj.Invoke()
@@ -270,6 +345,8 @@ $diag | ConvertTo-Json -Compress -Depth 5
 
     let stdout = "";
     let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
     child.stdout.on("data", (c) => (stdout += c.toString()));
     child.stderr.on("data", (c) => (stderr += c.toString()));
     child.on("error", reject);

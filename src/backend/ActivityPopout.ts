@@ -1,0 +1,216 @@
+import * as vscode from "vscode";
+import type { ActivityLog, ActivityEntry } from "./ActivityLog";
+
+/**
+ * ActivityPopout — opens a wide WebviewPanel that mirrors the sidebar
+ * Activity Log in real time. Useful for watching the auto-clicker tick
+ * stream while a chat is generating in the main editor area.
+ *
+ * Single-panel singleton: re-invoking reveals the existing panel rather
+ * than spawning duplicates.
+ */
+export class ActivityPopout implements vscode.Disposable {
+  private panel: vscode.WebviewPanel | null = null;
+  private readonly subscriptions: vscode.Disposable[] = [];
+
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly activity: ActivityLog
+  ) {}
+
+  public open(): void {
+    if (this.panel) {
+      this.panel.reveal(vscode.ViewColumn.Beside, false);
+      return;
+    }
+
+    const panel = vscode.window.createWebviewPanel(
+      "lakeburner.activityPopout",
+      "LakeBurner — Activity",
+      { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
+      { enableScripts: true, retainContextWhenHidden: true }
+    );
+    this.panel = panel;
+
+    panel.webview.html = this.buildHtml(panel.webview);
+
+    // Push the current entries immediately, then on every change.
+    const post = () => {
+      void panel.webview.postMessage({ type: "entries", entries: this.activity.list() });
+    };
+    post();
+    this.subscriptions.push(this.activity.onChange(post));
+
+    panel.webview.onDidReceiveMessage(
+      async (msg: { type?: string }) => {
+        if (msg?.type === "ready") post();
+        if (msg?.type === "clear") this.activity.clear();
+      },
+      undefined,
+      this.subscriptions
+    );
+
+    panel.onDidDispose(
+      () => {
+        this.panel = null;
+        while (this.subscriptions.length) {
+          try { this.subscriptions.pop()?.dispose(); } catch { /* ignore */ }
+        }
+      },
+      undefined,
+      this.context.subscriptions
+    );
+  }
+
+  public dispose(): void {
+    this.panel?.dispose();
+    this.panel = null;
+    while (this.subscriptions.length) {
+      try { this.subscriptions.pop()?.dispose(); } catch { /* ignore */ }
+    }
+  }
+
+  private buildHtml(webview: vscode.Webview): string {
+    const nonce = makeNonce();
+    const csp = [
+      `default-src 'none'`,
+      `style-src ${webview.cspSource} 'unsafe-inline'`,
+      `script-src 'nonce-${nonce}'`,
+    ].join("; ");
+    return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="${csp}" />
+  <title>LakeBurner — Activity</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0;
+      padding: 12px 16px;
+      font-family: var(--vscode-font-family);
+      font-size: var(--vscode-font-size);
+      color: var(--vscode-foreground);
+      background: var(--vscode-editor-background);
+    }
+    header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--vscode-panel-border);
+      position: sticky;
+      top: 0;
+      background: var(--vscode-editor-background);
+      z-index: 1;
+    }
+    header h1 { margin: 0; font-size: 1.05em; flex: 1; }
+    button {
+      background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
+      color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
+      border: 1px solid var(--vscode-contrastBorder, transparent);
+      padding: 4px 10px;
+      cursor: pointer;
+      font: inherit;
+    }
+    button:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground)); }
+    label { font-size: 0.9em; opacity: 0.8; display: flex; align-items: center; gap: 4px; }
+    #count { opacity: 0.7; font-size: 0.9em; }
+    .row { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--vscode-panel-border); }
+    .head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .ts { font-family: var(--vscode-editor-font-family); opacity: 0.65; font-size: 0.9em; }
+    .kind { font-weight: 600; font-size: 0.78em; padding: 1px 6px; border-radius: 3px; letter-spacing: 0.04em; }
+    .kind.REQUEST { background: rgba(100,150,255,0.18); color: #6db3ff; }
+    .kind.APPROVE { background: rgba(80,200,120,0.18); color: #66c984; }
+    .kind.BLOCK   { background: rgba(255,90,90,0.18); color: #ff7878; }
+    .kind.INFO    { background: rgba(180,180,180,0.18); color: var(--vscode-foreground); }
+    .msg { flex: 1; word-break: break-word; }
+    pre {
+      margin: 0;
+      padding: 6px 8px;
+      background: var(--vscode-textCodeBlock-background);
+      border-radius: 3px;
+      overflow-x: auto;
+      font-family: var(--vscode-editor-font-family);
+      font-size: 0.88em;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    details summary { cursor: pointer; opacity: 0.7; font-size: 0.85em; }
+    .empty { padding: 24px; text-align: center; opacity: 0.6; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Activity</h1>
+    <span id="count"></span>
+    <label><input type="checkbox" id="autoscroll" checked /> Auto-scroll</label>
+    <label><input type="checkbox" id="newestFirst" checked /> Newest first</label>
+    <button id="clear" type="button" title="Clear all activity entries">Clear</button>
+  </header>
+  <div id="list"></div>
+  <script nonce="${nonce}">
+    (function () {
+      const vscode = acquireVsCodeApi();
+      const listEl = document.getElementById('list');
+      const countEl = document.getElementById('count');
+      const autoscrollEl = document.getElementById('autoscroll');
+      const newestFirstEl = document.getElementById('newestFirst');
+      document.getElementById('clear').addEventListener('click', () => vscode.postMessage({ type: 'clear' }));
+
+      function escape(s) {
+        return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+      }
+
+      function render(entries) {
+        countEl.textContent = entries.length + ' entries';
+        if (!entries.length) {
+          listEl.innerHTML = '<div class="empty">No activity yet.</div>';
+          return;
+        }
+        const sorted = entries.slice().sort((a, b) => newestFirstEl.checked ? b.id - a.id : a.id - b.id);
+        const html = sorted.map(e => {
+          const t = (e.tsIso || '').slice(11, 19);
+          let dataHtml = '';
+          if (e.data !== undefined && e.data !== null) {
+            let body;
+            try { body = JSON.stringify(e.data, null, 2); } catch { body = String(e.data); }
+            dataHtml = '<details><summary>details</summary><pre>' + escape(body) + '</pre></details>';
+          }
+          return '<div class="row">' +
+            '<div class="head">' +
+              '<span class="ts">' + escape(t) + '</span>' +
+              '<span class="kind ' + escape(e.kind) + '">' + escape(e.kind) + '</span>' +
+              '<span class="msg">' + escape(e.message) + '</span>' +
+            '</div>' + dataHtml +
+            '</div>';
+        }).join('');
+        listEl.innerHTML = html;
+        if (autoscrollEl.checked) {
+          if (newestFirstEl.checked) window.scrollTo({ top: 0 });
+          else window.scrollTo({ top: document.body.scrollHeight });
+        }
+      }
+
+      let last = [];
+      newestFirstEl.addEventListener('change', () => render(last));
+
+      window.addEventListener('message', (event) => {
+        const msg = event.data;
+        if (msg && msg.type === 'entries') { last = msg.entries || []; render(last); }
+      });
+
+      vscode.postMessage({ type: 'ready' });
+    })();
+  </script>
+</body>
+</html>`;
+  }
+}
+
+function makeNonce(): string {
+  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let out = "";
+  for (let i = 0; i < 32; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}

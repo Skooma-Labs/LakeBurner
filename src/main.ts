@@ -4,6 +4,7 @@ import { Logger } from "./frontend/ts/TSLogger";
 import { ProviderMonitor } from "./backend/ProviderMonitor";
 import { registerLakeBurnerParticipant } from "./backend/ChatParticipant";
 import { ActivityLog } from "./backend/ActivityLog";
+import { ActivityPopout } from "./backend/ActivityPopout";
 import { AutoRunMode } from "./backend/AutoRunMode";
 import { registerLakeBurnerLmTools } from "./backend/LmTools";
 import { AutoClicker } from "./backend/AutoClicker";
@@ -32,10 +33,13 @@ export function activate(context: vscode.ExtensionContext) {
   const uia = new UIAAutoClicker(CFG_SECTION, logger, activity);
   const autoClicker = new AutoClicker(CFG_SECTION, logger, activity, context, uia);
   const dispatcher = new PromptDispatcher(CFG_SECTION, logger, activity);
-  const ticker = new AutoRunTicker(CFG_SECTION, logger, autoRun, autoClicker, affected, activity);
+  const ticker = new AutoRunTicker(CFG_SECTION, logger, autoRun, autoClicker, affected, activity, dispatcher);
   ticker.start(context);
 
-  const provider = new WebviewHost(context, CFG_SECTION, logger, monitor, activity, autoRun, autoClicker, dispatcher, affected);
+  const popout = new ActivityPopout(context, activity);
+  context.subscriptions.push(popout);
+
+  const provider = new WebviewHost(context, CFG_SECTION, logger, monitor, activity, autoRun, autoClicker, dispatcher, affected, popout);
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("lakeburner-view", provider, {
@@ -56,34 +60,7 @@ export function activate(context: vscode.ExtensionContext) {
       const next = await autoRun.toggle();
       vscode.window.showInformationMessage(`LakeBurner Auto-Run is now ${next ? "ON" : "OFF"}.`);
     }),
-    vscode.commands.registerCommand("lakeburner.autoClick.keep", async () => {
-      const result = await autoClicker.pressKeep();
-      if (result.ok) {
-        vscode.window.setStatusBarMessage(
-          `LakeBurner: Keep pressed via ${result.via}${result.commandId ? ` (${result.commandId})` : ""}`,
-          3000
-        );
-      } else {
-        vscode.window.showWarningMessage(
-          "LakeBurner: no Keep command succeeded and the coordinate fallback is unavailable. See Output → LakeBurner."
-        );
-      }
-    }),
-    vscode.commands.registerCommand("lakeburner.autoClick.calibrate", () => autoClicker.calibrateFallbackPosition()),
-    vscode.commands.registerCommand("lakeburner.autoClick.allow", async () => {
-      const result = await autoClicker.pressAllow();
-      if (result.ok) {
-        vscode.window.setStatusBarMessage(
-          `LakeBurner: Allow pressed via ${result.via}${result.commandId ? ` (${result.commandId})` : ""}`,
-          3000
-        );
-      } else {
-        vscode.window.showWarningMessage(
-          "LakeBurner: no Allow command succeeded and the coordinate fallback is unavailable. See Output \u2192 LakeBurner."
-        );
-      }
-    }),
-    vscode.commands.registerCommand("lakeburner.autoClick.calibrateAllow", () => autoClicker.calibrateAllowPosition()),
+    vscode.commands.registerCommand("lakeburner.activity.popout", () => popout.open()),
     vscode.commands.registerCommand("lakeburner.sendInitialPrompt", async (arg?: { targetId?: string; prompt?: string }) => {
       const targets = dispatcher.listTargets();
       let targetId = arg?.targetId;

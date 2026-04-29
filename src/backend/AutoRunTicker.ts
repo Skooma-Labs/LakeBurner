@@ -4,18 +4,13 @@ import type { AutoRunMode } from "./AutoRunMode";
 import type { AutoClicker } from "./AutoClicker";
 import type { AffectedChats } from "./AffectedChats";
 import type { ActivityLog } from "./ActivityLog";
+import type { PromptDispatcher } from "./PromptDispatcher";
 
 /**
- * Drives the silent "press Allow + press Keep" loop while Auto-Run is on.
- * Polls every `lakeburner.autoRun.tickIntervalMs` (default 0; opt-in only).
- *
- * Guards (all must pass for a tick to fire):
- *   - Auto-Run is ON
- *   - tickIntervalMs > 0
- *   - VS Code window is focused (when requireWindowFocus = true)
- *   - At least one allow-listed chat session is on the list. The recent
- *     activity window only matters if it's a real ms value; once you arm
- *     a chat (Send Initial Prompt or @lakeburner start) it stays armed.
+ * Drives the silent "press Allow + press Keep" loop while Auto-Run is on,
+ * and dispatches a "Keep going" continue-prompt when the conversation has
+ * stalled (no Allow/Keep button has been pressed for a configurable idle
+ * window). Polls every `lakeburner.autoRun.tickIntervalMs`.
  */
 export class AutoRunTicker implements vscode.Disposable {
   private timer: NodeJS.Timeout | null = null;
@@ -24,6 +19,21 @@ export class AutoRunTicker implements vscode.Disposable {
   private lastSkipLoggedAt = 0;
   private tickCount = 0;
   private firedCount = 0;
+  /** Wall-clock ms when the timer most recently started or fired a real action. */
+  private lastFireAt = Date.now();
+  /** Wall-clock ms of the most recent keep-going dispatch (used to enforce cooldown). */
+  private lastKeepGoingAt = 0;
+  /** Wall-clock ms when the chat busy indicator (Stop/Cancel) was last seen.
+   *  We start at `Date.now()` so the very first poll waits a full cooldown
+   *  before considering Keep Going — we cannot prove the chat is idle on
+   *  tick #1, only that we haven't seen it busy yet. */
+  private lastBusyAt = Date.now();
+  /** Number of consecutive ticks where the busy probe returned no match. */
+  private idleStreak = 0;
+  /** Wall-clock ms when we last announced "watching for stall" (one-shot diagnostic). */
+  private stallAnnouncedAt = 0;
+  /** Wall-clock ms when we last announced the chat is busy (one-shot diagnostic). */
+  private busyAnnouncedAt = 0;
 
   constructor(
     private readonly cfgSection: string,
@@ -31,7 +41,8 @@ export class AutoRunTicker implements vscode.Disposable {
     private readonly autoRun: AutoRunMode,
     private readonly autoClicker: AutoClicker,
     private readonly affected: AffectedChats,
-    private readonly activity: ActivityLog
+    private readonly activity: ActivityLog,
+    private readonly dispatcher: PromptDispatcher
   ) {}
 
   public start(context: vscode.ExtensionContext): void {
@@ -65,6 +76,12 @@ export class AutoRunTicker implements vscode.Disposable {
       { intervalMs: interval, allowedCount: this.affected.listAllowedIds().length }
     );
     this.logger.task({ fn: "refresh" }, "Auto-Run Ticker Started", { intervalMs: interval });
+    // Reset the stall clock — we don't want a "Keep going" to fire the moment
+    // the timer starts because of a stale lastFireAt from a previous arming.
+    this.lastFireAt = Date.now();
+    this.lastKeepGoingAt = 0;
+    this.lastBusyAt = Date.now();
+    this.idleStreak = 0;
     this.timer = setInterval(() => void this.tick(), interval);
   }
 
@@ -138,15 +155,118 @@ export class AutoRunTicker implements vscode.Disposable {
       this.firedCount++;
       // Only log when at least one strategy did something useful.
       if (allowResult.ok || keepResult.ok) {
+        this.lastFireAt = Date.now();
+        this.idleStreak = 0;
+        this.stallAnnouncedAt = 0;
         this.activity.add("APPROVE", `Tick #${this.tickCount} fired (Allow: ${allowResult.via}, Keep: ${keepResult.via})`, {
           tickCount: this.tickCount,
           firedCount: this.firedCount,
           allow: allowResult,
           keep: keepResult,
         });
+      } else {
+        // Nothing pressed this tick — the conversation may have stalled.
+        await this.maybeSendKeepGoing(cfg);
       }
     } finally {
       this.inFlight = false;
+    }
+  }
+
+  /**
+   * Dispatch the configured "Keep going" prompt only when the chat is
+   * provably idle: the UIA busy probe must have returned NO Stop/Cancel
+   * button for at least `autoRun.keepGoingAfterIdleMs`, AND for at least
+   * `autoRun.keepGoingIdleStreak` consecutive ticks. We never queue — if
+   * the assistant is still generating, we wait, no matter how long.
+   *
+   * The previous "time since last APPROVE" trigger was removed entirely:
+   * a long-running generation that never needs an Allow/Keep press should
+   * never be interrupted with a Keep Going.
+   */
+  private async maybeSendKeepGoing(cfg: vscode.WorkspaceConfiguration): Promise<void> {
+    const enabled = cfg.get<boolean>("autoRun.keepGoingEnabled", true);
+    if (!enabled) return;
+
+    const idleMs = cfg.get<number>("autoRun.keepGoingAfterIdleMs", 15000);
+    if (!Number.isFinite(idleMs) || idleMs <= 0) return;
+
+    const now = Date.now();
+    const sinceLastSend = now - this.lastKeepGoingAt;
+
+    // Cooldown: never re-send within the idle window. Prevents a rapid
+    // re-fire after the assistant briefly acknowledges and then stops.
+    if (sinceLastSend < idleMs) return;
+
+    // Probe FIRST. We only send when this returns null AND has been null
+    // for the full quiet period. Whatever happened before the probe (an
+    // APPROVE press, a long thinking pause, etc.) is irrelevant.
+    const busy = await this.autoClicker.uia.findBusyIndicator({ silent: true });
+    if (busy) {
+      this.lastBusyAt = now;
+      this.idleStreak = 0;
+      this.stallAnnouncedAt = 0;
+      if (now - this.busyAnnouncedAt > 15000) {
+        this.busyAnnouncedAt = now;
+        this.activity.add("INFO", `Chat busy (${busy}) — holding indefinitely until generation stops`, { busy });
+      }
+      return;
+    }
+    this.busyAnnouncedAt = 0;
+
+    const quietFor = now - this.lastBusyAt;
+    if (quietFor < idleMs) {
+      // Announce once per quiet window so the user sees the countdown is real.
+      if (this.stallAnnouncedAt < this.lastBusyAt) {
+        this.stallAnnouncedAt = now;
+        this.activity.add(
+          "INFO",
+          `Stop button gone — will send Keep Going after ${Math.round((idleMs - quietFor) / 1000)}s of continued quiet`,
+          { remainingMs: idleMs - quietFor, idleMs, quietFor }
+        );
+      }
+      return;
+    }
+
+    // Quiet long enough — require N consecutive idle ticks to confirm.
+    this.idleStreak++;
+    const required = Math.max(1, cfg.get<number>("autoRun.keepGoingIdleStreak", 3));
+    if (this.idleStreak < required) {
+      this.activity.add(
+        "INFO",
+        `Idle confirmation ${this.idleStreak}/${required} (${Math.round(quietFor / 1000)}s since last Stop button)`,
+        { idleStreak: this.idleStreak, required, quietFor }
+      );
+      return;
+    }
+
+    const text = (cfg.get<string>("autoRun.keepGoingPrompt", "") || "").trim()
+      || "Keep going. I trust your intuitions.\n\nIf the task is complete, find ways to improve what we've done in either quantity or quality. Our goal is endless generation with asymtotal diminishing returns. This verifies we reach a state where 'there is no more to be added' and 'the data quality cannot reliably through a variety of sources contemporary to the current year as it is in a state of maximum trustoworthiness'";
+    const targetId = (cfg.get<string>("autoRun.keepGoingTargetId", "") || "").trim() || "copilot";
+
+    this.lastKeepGoingAt = now;
+    this.idleStreak = 0;
+    this.stallAnnouncedAt = 0;
+    const quietForFinal = now - this.lastBusyAt;
+    this.activity.add("REQUEST", `Idle confirmed (${Math.round(quietForFinal / 1000)}s since last Stop button, ${required} confirmation ticks) → sending Keep Going to ${targetId}`, {
+      quietForMs: quietForFinal,
+      targetId,
+      promptLength: text.length,
+      idleStreak: required,
+    });
+    try {
+      const result = await this.dispatcher.send(targetId, text);
+      // Treat the dispatch itself as activity, so we don't immediately fire
+      // another Keep Going on the very next tick. Also reset the busy clock
+      // so the cooldown countdown begins from now.
+      this.lastFireAt = Date.now();
+      this.lastBusyAt = Date.now();
+      if (!result.ok) {
+        this.activity.add("BLOCK", `Keep Going dispatch failed: ${result.reason ?? "unknown"}`, { result });
+      }
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      this.activity.add("BLOCK", `Keep Going dispatch threw: ${reason}`);
     }
   }
 

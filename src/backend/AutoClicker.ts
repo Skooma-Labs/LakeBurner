@@ -28,7 +28,7 @@ export class AutoClicker {
     private readonly logger: Logger,
     private readonly activity: ActivityLog,
     private readonly context: vscode.ExtensionContext,
-    private readonly uia: UIAAutoClicker
+    public readonly uia: UIAAutoClicker
   ) {}
 
   // Defaults derived from GitHub Copilot Chat 0.45.x — see the Copilot Chat

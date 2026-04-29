@@ -2,7 +2,7 @@
   "name": "lakeburner",
   "displayName": "LakeBurner",
   "description": "User-Approval Harness for AI coding assistants. Sits beside Copilot Chat, Claude Code, and Codex inside VS Code, monitors their presence, and gates risky actions through @lakeburner.",
-  "version": "0.7.4",
+  "version": "0.8.5",
   "publisher": "JBLDotExe",
   "license": "MIT",
   "repository": {
@@ -47,23 +47,8 @@
         "category": "LakeBurner"
       },
       {
-        "command": "lakeburner.autoClick.keep",
-        "title": "LakeBurner: Press Copilot \"Keep\" Button",
-        "category": "LakeBurner"
-      },
-      {
-        "command": "lakeburner.autoClick.allow",
-        "title": "LakeBurner: Press Chat \"Allow\" Button",
-        "category": "LakeBurner"
-      },
-      {
-        "command": "lakeburner.autoClick.calibrate",
-        "title": "LakeBurner: Calibrate Keep Click Position",
-        "category": "LakeBurner"
-      },
-      {
-        "command": "lakeburner.autoClick.calibrateAllow",
-        "title": "LakeBurner: Calibrate Allow Click Position",
+        "command": "lakeburner.activity.popout",
+        "title": "LakeBurner: Open Activity Popout",
         "category": "LakeBurner"
       },
       {
@@ -273,6 +258,45 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "When `true`, the Auto-Run ticker only fires while the VS Code window is focused. Prevents background ticks from approving things while you're working in another app.",
+          "scope": "application"
+        },
+        "lakeburner.autoRun.keepGoingEnabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "When `true`, the Auto-Run ticker dispatches a **continue** prompt to the configured chat target after `autoRun.keepGoingAfterIdleMs` of no Allow/Keep activity. Useful for nudging a finished assistant turn back into action without manual input.",
+          "scope": "application"
+        },
+        "lakeburner.autoRun.keepGoingAfterIdleMs": {
+          "type": "number",
+          "default": 15000,
+          "minimum": 0,
+          "markdownDescription": "How long the chat must be **provably idle** (no Stop/Cancel button visible in the chat input) before dispatching the **Keep Going** prompt. The same value is used as a cooldown between dispatches. The ticker NEVER queues on top of an active generation — if the assistant is still streaming the timer waits indefinitely. Set to `0` to disable (equivalent to `keepGoingEnabled = false`).",
+          "scope": "application"
+        },
+        "lakeburner.autoRun.keepGoingPrompt": {
+          "type": "string",
+          "default": "Keep going. I trust your intuitions.\n\nIf the task is complete, find ways to improve what we've done in either quantity or quality. Our goal is endless generation with asymtotal diminishing returns. This verifies we reach a state where 'there is no more to be added' and 'the data quality cannot reliably through a variety of sources contemporary to the current year as it is in a state of maximum trustoworthiness'",
+          "markdownDescription": "Text dispatched to the active chat target when the Auto-Run ticker decides the conversation has stalled.",
+          "scope": "application"
+        },
+        "lakeburner.autoRun.keepGoingTargetId": {
+          "type": "string",
+          "default": "copilot",
+          "markdownDescription": "Target id (matching one of `lakeburner.initialPrompt.targets`) that receives the **Keep Going** prompt. Defaults to `copilot`.",
+          "scope": "application"
+        },
+        "lakeburner.autoRun.keepGoingIdleStreak": {
+          "type": "number",
+          "default": 3,
+          "minimum": 1,
+          "markdownDescription": "How many consecutive ticker scans must show **no Allow/Keep button AND no chat Stop/Cancel button** before the **Keep Going** prompt is dispatched. Higher values reduce the chance of queueing a prompt while the assistant is still streaming.",
+          "scope": "application"
+        },
+        "lakeburner.uia.busyButtonNames": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["Cancel", "Stop", "Stop generating", "Cancel request", "Cancel Editing Session"],
+          "markdownDescription": "Accessible names of buttons that indicate the chat is currently generating. While any of these is visible and enabled, the **Keep Going** stall-detector is suppressed.",
           "scope": "application"
         },
         "lakeburner.affectedChats.windowDays": {
