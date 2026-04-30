@@ -1,4 +1,4 @@
-import { createWebviewLogger } from "./TSLogger";
+import { createWebviewLogger } from "./Logger";
 
 type ProviderInfo = {
   id: string;
@@ -243,15 +243,19 @@ function renderAffectedChats(sessions: ChatSessionRecord[], allowedIds: string[]
   const allowed = new Set(allowedIds);
 
   for (const s of sessions) {
-    const row = document.createElement("div");
+    const row = document.createElement("label");
     row.className = "chat-row";
     row.title = `id: ${s.id}\nturns: ${s.turns}\nlast: ${s.lastSeenIso}`;
 
-    const dot = document.createElement("span");
-    dot.className = allowed.has(s.id) ? "chat-dot chat-dot-on" : "chat-dot chat-dot-off";
-    dot.textContent = allowed.has(s.id) ? "●" : "○";
-    dot.title = allowed.has(s.id) ? "Armed" : "Tracked but not armed";
-    row.appendChild(dot);
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.className = "chat-cb";
+    cb.checked = allowed.has(s.id);
+    cb.title = allowed.has(s.id) ? "Armed" : "Tracked but not armed";
+    cb.addEventListener("change", () => {
+      postMessageToHost({ type: "affectedChats.setAllowed", id: s.id, allowed: cb.checked });
+    });
+    row.appendChild(cb);
 
     const meta = document.createElement("div");
     meta.className = "chat-meta";
@@ -374,7 +378,7 @@ function handleIncoming(message: IncomingMessage): void {
 }
 
 function main(): void {
-  log.setLevel("Basic");
+  log.setLevel("Quiet");
   bindButtons();
 
   window.addEventListener("message", (event: MessageEvent) => {

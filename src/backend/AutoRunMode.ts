@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { Logger } from "../frontend/ts/TSLogger";
+import type { Logger } from "../frontend/ts/Logger";
 
 const STATE_KEY = "lakeburner.autoRun.enabled";
 const TRUST_PHRASE = "Keep going, I trust your intuitions";

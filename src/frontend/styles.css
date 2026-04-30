@@ -231,21 +231,44 @@ details.section > summary > .section-title {
   align-items: flex-start;
   padding: 4px 6px;
   border-radius: 4px;
-  cursor: default;
+  cursor: pointer;
 }
 .chat-row:hover { background: var(--vscode-list-hoverBackground); }
-.chat-row input[type="checkbox"] { margin-top: 2px; }
 
-.chat-dot {
-  font-size: 14px;
-  line-height: 16px;
-  margin-top: 1px;
-  width: 14px;
-  text-align: center;
-  flex: 0 0 14px;
+/* Custom checkbox */
+.chat-cb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  margin: 1px 0 0 0;
+  border: 1.5px solid var(--vscode-checkbox-border, rgba(255,255,255,0.3));
+  border-radius: 4px;
+  background: var(--vscode-checkbox-background, transparent);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s, border-color 0.15s;
 }
-.chat-dot-on  { color: var(--vscode-testing-iconPassed, #3fb950); }
-.chat-dot-off { color: var(--vscode-descriptionForeground, #888); opacity: 0.7; }
+.chat-cb:checked {
+  background: var(--vscode-checkbox-selectBackground, #007acc);
+  border-color: var(--vscode-checkbox-selectBorder, #007acc);
+}
+.chat-cb:checked::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--vscode-checkbox-foreground, #fff);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.chat-cb:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, #007acc);
+  outline-offset: 1px;
+}
 
 .chat-meta {
   display: flex;

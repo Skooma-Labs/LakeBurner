@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import * as crypto from "crypto";
-import type { Logger } from "../frontend/ts/TSLogger";
+import type { Logger } from "../frontend/ts/Logger";
 
 const STATE_KEY = "lakeburner.affectedChats.v1";
 const ALLOWLIST_KEY = "lakeburner.affectedChats.allowlist.v1";

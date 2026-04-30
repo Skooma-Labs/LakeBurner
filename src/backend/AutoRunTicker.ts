@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { Logger } from "../frontend/ts/TSLogger";
+import type { Logger } from "../frontend/ts/Logger";
 import type { AutoRunMode } from "./AutoRunMode";
 import type { AutoClicker } from "./AutoClicker";
 import type { AffectedChats } from "./AffectedChats";

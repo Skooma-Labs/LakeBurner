@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { WebviewHost } from "./frontend/ts/HostController";
-import { Logger } from "./frontend/ts/TSLogger";
+import { Logger } from "./frontend/ts/Logger";
 import { ProviderMonitor } from "./backend/ProviderMonitor";
 import { registerLakeBurnerParticipant } from "./backend/ChatParticipant";
 import { ActivityLog } from "./backend/ActivityLog";

@@ -4,7 +4,7 @@ import type * as vscode from "vscode";
 // Types
 // ------------------
 
-export type DebugLevel = "Silent" | "Basic" | "Loud";
+export type DebugLevel = "Silent" | "Quiet" | "Loud";
 export type LogKind = "TASK" | "USER" | "INFO" | "WARN" | "ERROR";
 
 export type LogSource = {
@@ -37,12 +37,9 @@ export type HostLogEnvelope = {
 //   never for narration, redundancy, or pre-formatted prose.
 //
 // DebugLevel expectations:
-// - Silent: No diagnostic output.
-// - Basic: Must include the "meat and potatoes" events a tester/user expects to see while executing QA test cases.
-//          Basic may include additional high-signal events, but any QA test case step that should be observable
-//          MUST produce at least one Basic-visible log line (TASK|USER|WARN|ERROR) that confirms the step occurred.
-//          Basic is not a full transcript; default plumbing/diagnostics to INFO so it only appears in Loud.
-// - Loud: Full verbose diagnostics ("kitchen sink").
+// - Silent: No output whatsoever.
+// - Quiet: Step progress only (TASK). Minimal signal for watching workflow progression.
+// - Loud: Steps AND detailed information — full verbose diagnostics ("kitchen sink").
 //
 // Kind guidance (to support QA + readability):
 // - USER: direct user-initiated actions (clicks, toggles, save, open dialog, confirmations).
@@ -90,13 +87,13 @@ function safeJson(v: unknown): string {
 
 function shouldLog(level: DebugLevel, kind: LogKind): boolean {
   if (level === "Silent") return false;
-  if (level === "Basic") return kind === "TASK" || kind === "USER" || kind === "WARN" || kind === "ERROR";
+  if (level === "Quiet") return kind === "TASK";
   return true;
 }
 
 function assertDebugLevel(v: unknown, settingPath: string): DebugLevel {
-  if (v === "Silent" || v === "Basic" || v === "Loud") return v;
-  throw new Error(`Invalid setting: ${settingPath} (expected: Silent|Basic|Loud)`);
+  if (v === "Silent" || v === "Quiet" || v === "Loud") return v;
+  throw new Error(`Invalid setting: ${settingPath} (expected: Silent|Quiet|Loud)`);
 }
 
 function utcIso(): string {
@@ -273,14 +270,30 @@ export function createWebviewLogger(opts: {
     debug: console.debug.bind(console),
   };
 
+  const kindColors: Record<LogKind, string> = {
+    TASK: "color:#22c55e;font-weight:bold",   // green
+    USER: "color:#3b82f6;font-weight:bold",   // blue
+    INFO: "color:#a3a3a3",                    // gray
+    WARN: "color:#eab308;font-weight:bold",   // yellow
+    ERROR: "color:#ef4444;font-weight:bold",  // red
+  };
+  const fileColor = "color:#c084fc";           // purple
+  const resetStyle = "color:inherit;font-weight:normal";
+
   function emit(kind: LogKind, fn: string, message: string, data?: unknown): void {
     if (!shouldLog(level, kind)) return;
 
-    const line = formatLogLine(utcIso(), file, fn, kind, message, data);
+    const ts = utcIso();
+    const ctx = formatContext(data);
+    const ctxBracket = ctx ? `[${ctx}]` : "";
 
-    if (kind === "ERROR") rawConsole.error(line);
-    else if (kind === "WARN") rawConsole.warn(line);
-    else rawConsole.info(line);
+    // Color-coded console output: [timestamp][%cfile%c][fn][%ckind%c][ctx] message
+    const template = `[${ts}][%c${file}%c][${fn}][%c${kind}%c]${ctxBracket} ${message}`;
+    const styles = [fileColor, resetStyle, kindColors[kind], resetStyle];
+
+    if (kind === "ERROR") rawConsole.error(template, ...styles);
+    else if (kind === "WARN") rawConsole.warn(template, ...styles);
+    else rawConsole.info(template, ...styles);
 
     try {
       opts.postMessage({ type: "lakeburner.hostlog", kind, file, fn, message, data });

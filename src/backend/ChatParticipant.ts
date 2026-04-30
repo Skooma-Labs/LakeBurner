@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { Logger } from "../frontend/ts/TSLogger";
+import type { Logger } from "../frontend/ts/Logger";
 import type { ActivityLog } from "./ActivityLog";
 import type { AutoRunMode } from "./AutoRunMode";
 import type { AffectedChats } from "./AffectedChats";
@@ -151,7 +151,7 @@ async function handleContext(
     stream.markdown(`- Active file: \`${activeEditor.document.fileName}\`\n`);
     stream.markdown(`- Language: \`${activeEditor.document.languageId}\`\n`);
   }
-  stream.markdown(`- Debug level: \`${cfg.get("debugLevel", "Basic")}\`\n`);
+  stream.markdown(`- Debug level: \`${cfg.get("debugLevel", "Quiet")}\`\n`);
 
   activity.add("INFO", `Context delivered: ${topic}`, { sessionId });
   return { metadata: { topic, sessionId } };

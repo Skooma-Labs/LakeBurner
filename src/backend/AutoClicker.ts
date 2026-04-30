@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { spawn } from "child_process";
-import type { Logger } from "../frontend/ts/TSLogger";
+import type { Logger } from "../frontend/ts/Logger";
 import type { ActivityLog } from "./ActivityLog";
 import type { UIAAutoClicker } from "./UIAAutoClicker";
 

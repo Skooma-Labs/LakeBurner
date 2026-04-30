@@ -1,6 +1,6 @@
 import { spawn } from "child_process";
 import * as vscode from "vscode";
-import type { Logger } from "../frontend/ts/TSLogger";
+import type { Logger } from "../frontend/ts/Logger";
 import type { ActivityLog } from "./ActivityLog";
 
 /**

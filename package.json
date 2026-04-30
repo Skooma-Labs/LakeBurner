@@ -148,18 +148,18 @@
       "properties": {
         "lakeburner.debugLevel": {
           "type": "string",
-          "default": "Basic",
+          "default": "Quiet",
           "enum": [
             "Silent",
-            "Basic",
+            "Quiet",
             "Loud"
           ],
           "enumDescriptions": [
-            "No diagnostic output whatsoever.",
-            "User options, settings changes, and task progress only.",
-            "Full verbose diagnostics. The kitchen sink."
+            "No output whatsoever.",
+            "Step progress only (TASK events).",
+            "Full verbose diagnostics. Steps and detailed information."
           ],
-          "description": "Verbosity for the LakeBurner output channel.",
+          "description": "The level of Verbosity Expected from LakeBurner in your Console Output.",
           "scope": "application"
         },
         "lakeburner.providers": {

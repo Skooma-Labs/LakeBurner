@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { Logger } from "../frontend/ts/TSLogger";
+import type { Logger } from "../frontend/ts/Logger";
 
 export type ProviderInfo = {
   id: string;

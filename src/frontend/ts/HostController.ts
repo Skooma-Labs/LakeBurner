@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import * as crypto from "crypto";
-import { Logger, type HostLogEnvelope } from "./TSLogger";
+import { Logger, type HostLogEnvelope } from "./Logger";
 import type { ProviderMonitor, ProviderInfo } from "../../backend/ProviderMonitor";
 import type { ActivityLog, ActivityEntry } from "../../backend/ActivityLog";
 import type { AutoRunMode } from "../../backend/AutoRunMode";
