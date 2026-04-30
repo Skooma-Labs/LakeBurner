@@ -1,11 +1,3 @@
-
-
-
-Example Initial Prompt:  
-Please create a new csv file containing foods and datapoints about them inside of my "C:\Users\5798017\Downloads" folder
-
----
-
 # LakeBurner
 
 LakeBurner is a User-Approval Harness for AI coding assistants in Visual Studio Code. It sits alongside Copilot Chat, Claude Code, and Codex, monitoring their presence and gating risky actions through the `@lakeburner` approval workflow.
@@ -41,7 +33,9 @@ npm run build
 
 4. Launch an Extension Development Host from the Run panel to try LakeBurner.
 
-Tip: Use the built-in Sample UI (Activity panel) to arm chats and test the approval workflow.
+Example Initial Prompt:  
+Please create a new csv file containing foods and datapoints about them inside of my "C:\Users\5798017\Downloads" folder
+
 
 ## Features
 
@@ -125,20 +119,6 @@ Configure LakeBurner under the `lakeburner` settings section in VS Code (Setting
 - Provider requests and responses are sent directly to the provider endpoints through the installed provider extensions — LakeBurner does not proxy or persist provider credentials.
 - Activity logs are stored in-memory and in extension `globalState` for session persistence; do not use LakeBurner to store sensitive secrets.
 - For high-security setups, disable Auto-Run and require manual approvals for all actions.
-
-## FAQ / Troubleshooting
-
-- Q: "Why does the activity say 'Chat busy' even when idle?"
-	- A: That message indicates the internal Auto-Run ticker is stopped (for example, no armed chats, Auto-Run disabled, or `tickerInterval` set to 0). It means LakeBurner is holding until a trigger (armed chat, Auto-Run, or prompt) resumes dispatch — not that it's actively processing.
-
-- Q: "How do I arm a chat?"
-	- A: Use the 'Send Initial Prompt' control in the UI or include `@lakeburner start` in a prompt to arm the current chat.
-
-- Q: "I approve an action but it doesn't run — what now?"
-	- A: Check the Activity Log for details. Ensure the target provider is active and that the extension's globalState shows the chat as allowed. Also verify any UI popouts don't require additional confirmation.
-
-- Q: "Can LakeBurner run unattended?"
-	- A: Only if Auto-Run is enabled and the chat is armed. For safety, consider keeping Auto-Run disabled and approving actions manually.
 
 ## Development
 
