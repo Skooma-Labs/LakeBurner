@@ -81,6 +81,8 @@ export function activate(context: vscode.ExtensionContext) {
         })) ?? "";
       }
       if (!prompt.trim()) return;
+      await autoRun.setEnabled(true);
+      await affected.registerExternal(prompt);
       await dispatcher.send(targetId, prompt);
     })
   );

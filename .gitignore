@@ -1,6 +1,7 @@
 # Build output
 /dist/
 tsconfig.tsbuildinfo
+*.vsix
 
 # Dependencies
 /node_modules/
