@@ -401,6 +401,20 @@
             }
           },
           "scope": "application"
+        },
+        "lakeburner.localCommandInjection.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "When `true`, LakeBurner listens on a local TCP port (`127.0.0.1:19816`) for command injection from trusted local applications (e.g. IcedPlate Hermaeus). Only accepts connections from localhost. Requires extension restart to take effect.",
+          "scope": "application"
+        },
+        "lakeburner.localCommandInjection.port": {
+          "type": "number",
+          "default": 19816,
+          "minimum": 1024,
+          "maximum": 65535,
+          "markdownDescription": "TCP port for the local command injection listener. Default `19816`. Only used when `lakeburner.localCommandInjection.enabled` is `true`.",
+          "scope": "application"
         }
       }
     }

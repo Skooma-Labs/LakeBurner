@@ -12,6 +12,7 @@ import { UIAAutoClicker } from "./backend/UIAAutoClicker";
 import { AutoRunTicker } from "./backend/AutoRunTicker";
 import { AffectedChats } from "./backend/AffectedChats";
 import { PromptDispatcher } from "./backend/PromptDispatcher";
+import { LocalCommandListener } from "./backend/LocalCommandListener";
 
 const CFG_SECTION = "lakeburner";
 
@@ -54,6 +55,9 @@ export function activate(context: vscode.ExtensionContext) {
 
   registerLakeBurnerParticipant(context, logger, activity, autoRun, CFG_SECTION, affected, dispatcher);
   registerLakeBurnerLmTools(context, logger, autoRun, activity);
+
+  const localListener = new LocalCommandListener(CFG_SECTION, logger, dispatcher, autoRun, affected);
+  localListener.start(context);
 
   context.subscriptions.push(
     vscode.commands.registerCommand("lakeburner.autoRun.toggle", async () => {
