@@ -171,6 +171,8 @@ export class WebviewHost implements vscode.WebviewViewProvider {
             // conversation, so the entries collide cleanly.
             await this.affected.registerExternal(prompt);
             await this.dispatcher.send(targetId, prompt);
+            this.broadcastAutoRun();
+            this.broadcastAffectedChats();
             return;
           }
 
@@ -301,7 +303,6 @@ export class WebviewHost implements vscode.WebviewViewProvider {
     <summary class="section-summary">
       <h2 class="section-title">Active Fires</h2>
     </summary>
-    <p class="section-hint">Active chat sessions LakeBurner is running. Add via <strong>Start a Chat</strong> or <code>@lakeburner start</code>; remove via the trash icon or <code>@lakeburner stop</code>.</p>
     <div id="affected-chats" class="affected-chats" aria-live="polite"></div>
   </details>
 

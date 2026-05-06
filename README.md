@@ -21,7 +21,7 @@ LakeBurner can still load on non-Windows machines, but the UI Automation strateg
 - **Nudge Idle Chats**: sends the configured Keep Going prompt after the chat is provably idle.
 - **Show Useful Activity**: the in-app Activity view shows `REQUEST`, `APPROVE`, and `BLOCK` events only.
 - **Keep Diagnostics in Output**: diagnostic `INFO` traffic goes to the LakeBurner Output channel and obeys `lakeburner.debugLevel`.
-- **Show Provider Status**: the Overlords panel tracks configured provider extensions and Copilot OpenTelemetry readiness.
+- **Show Provider Status**: the Overlords panel tracks configured provider extensions without surfacing internal telemetry plumbing.
 
 ## Quick Start
 
@@ -111,16 +111,7 @@ The Overlords panel shows provider extension status for:
 - Claude Code
 - OpenAI Codex / ChatGPT
 
-For GitHub Copilot Chat on VS Code 1.119+, it also shows OpenTelemetry readiness:
-
-- OTel capable
-- OTel enabled or disabled
-- exporter type
-- endpoint
-- content capture state
-- whether settings or environment variables enabled it
-
-LakeBurner only reads and displays this state. It does not enable Copilot telemetry, collect telemetry, or send telemetry itself.
+OpenTelemetry awareness stays internal. LakeBurner does not enable Copilot telemetry, collect telemetry, send telemetry itself, or display OTel state in the extension UI.
 
 ## Chat Participant Commands
 
@@ -214,7 +205,7 @@ Output entries include `lakeburnerActivityId` and `lakeburnerActivityKind` so th
 
 ## OpenTelemetry Awareness
 
-VS Code 1.119 introduced Copilot Chat OpenTelemetry for agent sessions. LakeBurner reads the relevant Copilot settings and environment variables and shows their status in Overlords:
+VS Code 1.119 introduced Copilot Chat OpenTelemetry for agent sessions. LakeBurner can read the relevant Copilot settings and environment variables for internal diagnostics and correlation:
 
 - `github.copilot.chat.otel.enabled`
 - `github.copilot.chat.otel.exporterType`
@@ -226,7 +217,7 @@ VS Code 1.119 introduced Copilot Chat OpenTelemetry for agent sessions. LakeBurn
 - `OTEL_EXPORTER_OTLP_PROTOCOL`
 - `COPILOT_OTEL_CAPTURE_CONTENT`
 
-This is optional observability support. LakeBurner does not depend on OTel for its control loop.
+This is optional under-the-hood observability support. LakeBurner does not depend on OTel for its control loop and does not show OTel status in the extension UI.
 
 ## Important Settings
 

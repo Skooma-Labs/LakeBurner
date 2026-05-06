@@ -129,12 +129,41 @@ export class ActivityPopout implements vscode.Disposable {
     }
     button:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground)); }
     select {
-      background: var(--vscode-dropdown-background);
+      appearance: none;
+      -webkit-appearance: none;
+      background-color: var(--vscode-dropdown-background);
+      background-image:
+        linear-gradient(45deg, transparent 50%, var(--vscode-dropdown-foreground) 50%),
+        linear-gradient(135deg, var(--vscode-dropdown-foreground) 50%, transparent 50%);
+      background-position:
+        calc(100% - 15px) 50%,
+        calc(100% - 10px) 50%;
+      background-size: 5px 5px, 5px 5px;
+      background-repeat: no-repeat;
       color: var(--vscode-dropdown-foreground);
       border: 1px solid var(--vscode-dropdown-border, var(--vscode-contrastBorder, transparent));
-      padding: 3px 6px;
+      border-radius: 4px;
+      padding: 5px 30px 5px 10px;
       font: inherit;
       max-width: 280px;
+      outline: none;
+    }
+    select:hover {
+      border-color: var(--vscode-focusBorder, #007acc);
+      background-color: color-mix(in srgb, var(--vscode-dropdown-background) 88%, var(--vscode-list-hoverBackground, #2a2d2e) 12%);
+    }
+    select:focus {
+      border-color: var(--vscode-focusBorder, #007acc);
+      box-shadow: 0 0 0 1px var(--vscode-focusBorder, #007acc);
+    }
+    select option {
+      background: var(--vscode-dropdown-background);
+      color: var(--vscode-dropdown-foreground);
+      padding: 6px 10px;
+    }
+    select option:checked {
+      background: var(--vscode-list-activeSelectionBackground, var(--vscode-button-background));
+      color: var(--vscode-list-activeSelectionForeground, var(--vscode-button-foreground));
     }
     label { font-size: 0.9em; opacity: 0.8; display: flex; align-items: center; gap: 4px; }
     #count { opacity: 0.7; font-size: 0.9em; }

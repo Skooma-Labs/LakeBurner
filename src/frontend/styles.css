@@ -200,13 +200,44 @@ details.section > summary > .section-title {
 .row .btn { flex: 1 1 auto; }
 
 .select {
+  appearance: none;
+  -webkit-appearance: none;
   width: 100%;
-  padding: 6px 8px;
+  min-height: 30px;
+  padding: 6px 30px 6px 10px;
   border-radius: 4px;
-  border: 1px solid var(--vscode-input-border, rgba(128, 128, 128, 0.35));
-  background: var(--vscode-dropdown-background, var(--vscode-input-background));
+  border: 1px solid var(--vscode-dropdown-border, var(--vscode-input-border, rgba(128, 128, 128, 0.35)));
+  background-color: var(--vscode-dropdown-background, var(--vscode-input-background));
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--vscode-dropdown-foreground, var(--vscode-input-foreground)) 50%),
+    linear-gradient(135deg, var(--vscode-dropdown-foreground, var(--vscode-input-foreground)) 50%, transparent 50%);
+  background-position:
+    calc(100% - 15px) 50%,
+    calc(100% - 10px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
   color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground));
   font-size: 12px;
+  line-height: 1.35;
+  outline: none;
+}
+.select:hover {
+  border-color: var(--vscode-focusBorder, #007acc);
+  background-color: color-mix(in srgb, var(--vscode-dropdown-background, var(--vscode-input-background)) 88%, var(--vscode-list-hoverBackground, #2a2d2e) 12%);
+}
+.select:focus,
+.select:focus-visible {
+  border-color: var(--vscode-focusBorder, #007acc);
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder, #007acc);
+}
+.select option {
+  background: var(--vscode-dropdown-background, var(--vscode-input-background));
+  color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground));
+  padding: 6px 10px;
+}
+.select option:checked {
+  background: var(--vscode-list-activeSelectionBackground, var(--vscode-button-background));
+  color: var(--vscode-list-activeSelectionForeground, var(--vscode-button-foreground));
 }
 
 .textarea {
@@ -250,10 +281,6 @@ details.section > summary > .section-title {
 }
 .provider.is-installed .dot { background: #c97a14; }
 .provider.is-active .dot { background: #2ecc71; box-shadow: 0 0 6px rgba(46, 204, 113, 0.6); }
-.provider.has-otel .dot {
-  background: #4aa3ff;
-  box-shadow: 0 0 6px rgba(74, 163, 255, 0.55);
-}
 
 .provider .meta {
   flex: 1 1 auto;
@@ -271,9 +298,6 @@ details.section > summary > .section-title {
 .provider .sub {
   font-size: 10px;
   opacity: 0.65;
-}
-.provider .sub.obs {
-  opacity: 0.78;
 }
 .provider .provider-action-btn {
   flex: 0 0 auto;
@@ -390,7 +414,8 @@ details.section > summary > .section-title {
 
 .activity-empty {
   opacity: 0.5;
-  font-style: italic;
+  text-align: center;
+  padding: 14px 6px;
 }
 
 .activity-item {

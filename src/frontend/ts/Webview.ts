@@ -134,18 +134,6 @@ function renderProviders(providers: ProviderInfo[]): void {
       : `${p.id} · not installed`;
     meta.appendChild(sub);
 
-    if (p.observability) {
-      const obs = document.createElement("span");
-      obs.className = "sub obs";
-      const enabled = p.observability.otelEnabled ? "OTel on" : "OTel off";
-      const capable = p.observability.otelCapable ? "" : " · needs VS Code 1.119+";
-      const capture = p.observability.otelCaptureContent ? " · content capture" : "";
-      obs.textContent = `${enabled}${capable}${capture}`;
-      obs.title = `${p.observability.otelExporterType ?? "otlp-http"} → ${p.observability.otelEndpoint ?? "(no endpoint)"} (${p.observability.source})`;
-      meta.appendChild(obs);
-      card.classList.add(p.observability.otelEnabled ? "has-otel" : "no-otel");
-    }
-
     card.appendChild(meta);
 
     const actionBtn = document.createElement("button");
@@ -182,7 +170,7 @@ function renderActivity(entries: ActivityEntry[]): void {
   if (entries.length === 0) {
     const empty = document.createElement("div");
     empty.className = "activity-empty";
-    empty.textContent = "No activity yet. Try `@lakeburner advise <plan>` in Copilot Chat.";
+    empty.textContent = "No Activity Yet";
     root.appendChild(empty);
     return;
   }
@@ -234,17 +222,29 @@ function renderActivity(entries: ActivityEntry[]): void {
 }
 
 function renderAutoRun(enabled: boolean): void {
+  autoRunEnabled = enabled;
   const btn = el<HTMLButtonElement>("autoRunBtn");
   const state = el<HTMLSpanElement>("autoRunState");
   if (btn) btn.setAttribute("aria-pressed", enabled ? "true" : "false");
   if (state) state.textContent = enabled ? "ON" : "OFF";
+  reconcileStartButton();
 }
 
 let promptInitialized = false;
+let autoRunEnabled = false;
 
 // Activity session filtering state
 let lastActivityEntries: ActivityEntry[] = [];
 let lastKnownSessions: ChatSessionRecord[] = [];
+
+function reconcileStartButton(): void {
+  const btn = el<HTMLButtonElement>("sendPromptBtn");
+  if (!btn) return;
+  const running = autoRunEnabled && lastKnownSessions.length > 0;
+  btn.disabled = running;
+  btn.classList.toggle("is-running", running);
+  btn.textContent = running ? "Running..." : "Start";
+}
 
 function getSelectedSessionFilter(): string {
   const filter = el<HTMLSelectElement>("activitySessionFilter");
@@ -328,8 +328,12 @@ function renderPrompt(targets: PromptTarget[], defaultPrompt: string): void {
 }
 
 function renderAffectedChats(sessions: ChatSessionRecord[], _allowedIds: string[]): void {
+  lastKnownSessions = sessions;
   const root = el<HTMLDivElement>("affected-chats");
-  if (!root) return;
+  if (!root) {
+    reconcileStartButton();
+    return;
+  }
 
   // Auto-expand the Active Fires and Activity sections when there are sessions
   if (sessions.length > 0) {
@@ -347,6 +351,7 @@ function renderAffectedChats(sessions: ChatSessionRecord[], _allowedIds: string[
     empty.textContent =
       "No active fires. Start a Chat or invoke @lakeburner start in any chat to add one.";
     root.appendChild(empty);
+    reconcileStartButton();
     return;
   }
 
@@ -383,6 +388,7 @@ function renderAffectedChats(sessions: ChatSessionRecord[], _allowedIds: string[
 
     root.appendChild(row);
   }
+  reconcileStartButton();
 }
 
 function bindButtons(): void {
