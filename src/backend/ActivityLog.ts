@@ -31,17 +31,19 @@ export class ActivityLog {
       data,
     };
 
+    const logData = { lakeburnerActivityId: entry.id, lakeburnerActivityKind: kind, ...normalizeData(data) };
+
     if (kind === "INFO") {
-      this.logger.info({ fn: "ActivityLog.add" }, message, data);
+      this.logger.info({ fn: "ActivityLog.add" }, message, logData);
       return entry;
     }
 
     this.entries.push(entry);
     if (this.entries.length > MAX_ENTRIES) this.entries.splice(0, this.entries.length - MAX_ENTRIES);
 
-    if (kind === "REQUEST") this.logger.user({ fn: "ActivityLog.add" }, message, data);
-    else if (kind === "APPROVE") this.logger.task({ fn: "ActivityLog.add" }, message, data);
-    else this.logger.warn({ fn: "ActivityLog.add" }, message, data);
+    if (kind === "REQUEST") this.logger.user({ fn: "ActivityLog.add" }, message, logData);
+    else if (kind === "APPROVE") this.logger.task({ fn: "ActivityLog.add" }, message, logData);
+    else this.logger.warn({ fn: "ActivityLog.add" }, message, logData);
 
     this.emitter.fire();
     return entry;
@@ -55,4 +57,12 @@ export class ActivityLog {
     this.entries.length = 0;
     this.emitter.fire();
   }
+}
+
+function normalizeData(data: unknown): Record<string, unknown> {
+  return data && typeof data === "object" && !Array.isArray(data)
+    ? data as Record<string, unknown>
+    : data === undefined
+      ? {}
+      : { data };
 }

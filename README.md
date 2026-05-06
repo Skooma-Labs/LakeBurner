@@ -49,7 +49,10 @@ Example Initial Prompt:
 	Optional auto-execution mode with safety settings and an internal ticker that controls when prompts are dispatched.
 
 - **Activity Log & UI:**
-	Centralized activity log (requests, approvals, blocks, info) and a Webview UI for easy monitoring.
+	Centralized in-app activity log for user-meaningful events (`REQUEST`, `APPROVE`, `BLOCK`). Diagnostic `INFO` traffic follows the VscPlate debug-level standard and goes to the LakeBurner Output channel.
+
+- **Copilot OpenTelemetry Awareness:**
+	On VS Code 1.119+, LakeBurner detects GitHub Copilot Chat OpenTelemetry configuration and shows readiness in the Overlords panel without changing the existing Auto-Run control loop.
 
 - **Affected Chats Management:**
 	Arm or disarm specific chat sessions for automation to limit automated actions to intended sessions.
@@ -109,9 +112,11 @@ Configure LakeBurner under the `lakeburner` settings section in VS Code (Setting
 
 ## Activity & UI
 
-- **Activity Log:** Records events with timestamps and kinds (`REQUEST`, `APPROVE`, `BLOCK`, `INFO`).
+- **Activity Log:** Records user-meaningful events with timestamps and kinds (`REQUEST`, `APPROVE`, `BLOCK`).
+- **Diagnostics:** `INFO` events are written to the LakeBurner Output channel and obey `lakeburner.debugLevel` (`Silent`, `Quiet`, `Loud`).
 - **Affected Chats panel:** Shows currently armed chat sessions and allows manual control.
 - **Popout:** A compact activity popout window is available for quick monitoring.
+- **OpenTelemetry:** If VS Code 1.119+ and Copilot OTel are enabled through `github.copilot.chat.otel.*` or OTel environment variables, the Overlords panel shows Copilot OTel status. LakeBurner Output entries include `lakeburnerActivityId` and `lakeburnerActivityKind` metadata so they can be correlated with Copilot `invoke_agent`, `chat`, and `execute_tool` traces by time/session.
 
 ## Security & Privacy
 

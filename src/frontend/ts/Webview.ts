@@ -6,6 +6,16 @@ type ProviderInfo = {
   installed: boolean;
   active: boolean;
   version?: string;
+  observability?: ProviderObservability;
+};
+
+type ProviderObservability = {
+  otelCapable: boolean;
+  otelEnabled: boolean;
+  otelEndpoint?: string;
+  otelExporterType?: string;
+  otelCaptureContent: boolean;
+  source: "settings" | "environment" | "none";
 };
 
 type ActivityKind = "REQUEST" | "APPROVE" | "BLOCK" | "INFO";
@@ -123,6 +133,18 @@ function renderProviders(providers: ProviderInfo[]): void {
       ? `${p.id}${p.version ? ` · v${p.version}` : ""}`
       : `${p.id} · not installed`;
     meta.appendChild(sub);
+
+    if (p.observability) {
+      const obs = document.createElement("span");
+      obs.className = "sub obs";
+      const enabled = p.observability.otelEnabled ? "OTel on" : "OTel off";
+      const capable = p.observability.otelCapable ? "" : " · needs VS Code 1.119+";
+      const capture = p.observability.otelCaptureContent ? " · content capture" : "";
+      obs.textContent = `${enabled}${capable}${capture}`;
+      obs.title = `${p.observability.otelExporterType ?? "otlp-http"} → ${p.observability.otelEndpoint ?? "(no endpoint)"} (${p.observability.source})`;
+      meta.appendChild(obs);
+      card.classList.add(p.observability.otelEnabled ? "has-otel" : "no-otel");
+    }
 
     card.appendChild(meta);
 

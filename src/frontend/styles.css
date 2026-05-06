@@ -250,6 +250,10 @@ details.section > summary > .section-title {
 }
 .provider.is-installed .dot { background: #c97a14; }
 .provider.is-active .dot { background: #2ecc71; box-shadow: 0 0 6px rgba(46, 204, 113, 0.6); }
+.provider.has-otel .dot {
+  background: #4aa3ff;
+  box-shadow: 0 0 6px rgba(74, 163, 255, 0.55);
+}
 
 .provider .meta {
   flex: 1 1 auto;
@@ -267,6 +271,9 @@ details.section > summary > .section-title {
 .provider .sub {
   font-size: 10px;
   opacity: 0.65;
+}
+.provider .sub.obs {
+  opacity: 0.78;
 }
 .provider .provider-action-btn {
   flex: 0 0 auto;
