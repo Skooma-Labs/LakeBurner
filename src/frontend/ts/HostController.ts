@@ -15,12 +15,12 @@ type IncomingFromWebview =
   | { type: "autoRun.toggle" }
   | { type: "prompt.send"; targetId: string; prompt: string }
   | { type: "prompt.saveDefault"; prompt: string }
-  | { type: "affectedChats.setAllowed"; id: string; allowed: boolean }
+  | { type: "affectedChats.remove"; id: string }
   | { type: "affectedChats.clear" }
   | { type: "activity.clear" }
   | { type: "activity.copy" }
-  | { type: "activity.popout" }
-  | HostLogEnvelope
+  | { type: "activity.popout" }  | { type: "provider.switch"; id: string }
+  | { type: "provider.login"; id: string }  | HostLogEnvelope
   | { type: string; [key: string]: unknown };
 
 type OutgoingToWebview =
@@ -164,6 +164,7 @@ export class WebviewHost implements vscode.WebviewViewProvider {
               this.logger.warn({ fn: "onDidReceiveMessage" }, "prompt.send Missing Fields", { hasTarget: !!targetId, hasPrompt: !!prompt.trim() });
               return;
             }
+            await this.autoRun.setEnabled(true);
             // Register the dispatched chat in Affected Chats and add it to
             // the allowlist. Fingerprint matches the one the chat participant
             // would compute if @lakeburner is later invoked in the same
@@ -181,16 +182,37 @@ export class WebviewHost implements vscode.WebviewViewProvider {
             return;
           }
 
-          case "affectedChats.setAllowed": {
+          case "affectedChats.remove": {
             const id = String((incoming as { id?: unknown }).id ?? "").trim();
-            const allowed = !!(incoming as { allowed?: unknown }).allowed;
             if (!id) return;
-            await this.affected.setAllowed(id, allowed);
+            await this.affected.removeSession(id);
             return;
           }
 
           case "affectedChats.clear": {
             await this.affected.clear();
+            return;
+          }
+
+          case "provider.switch": {
+            const id = String((incoming as { id?: unknown }).id ?? "").trim();
+            if (!id) return;
+            // Find the matching dispatch target and open it
+            const targets = this.dispatcher.listTargets();
+            const target = targets.find((t) => t.id === id || t.label.toLowerCase().includes(id.toLowerCase()));
+            if (target) {
+              await vscode.commands.executeCommand(target.command);
+            }
+            this.logger.user({ fn: "onDidReceiveMessage" }, "Provider Switch", { id });
+            return;
+          }
+
+          case "provider.login": {
+            const id = String((incoming as { id?: unknown }).id ?? "").trim();
+            if (!id) return;
+            // Open Extensions view filtered to the provider
+            await vscode.commands.executeCommand("workbench.extensions.search", id);
+            this.logger.user({ fn: "onDidReceiveMessage" }, "Provider Login/Install", { id });
             return;
           }
 
@@ -266,51 +288,37 @@ export class WebviewHost implements vscode.WebviewViewProvider {
   <title>LakeBurner</title>
 </head>
 <body>
-  <details class="section">
-    <summary class="section-summary"><h2 class="section-title">AI Providers</h2></summary>
-    <div id="provider-list" class="provider-list"></div>
-  </details>
-
   <details class="section" open>
-    <summary class="section-summary"><h2 class="section-title">Tasks</h2></summary>
-    <div class="stack">
-      <button id="autoRunBtn" class="btn btn-toggle" type="button" aria-pressed="false"
-              title="Auto-approve tool/Keep prompts. Replies 'Keep going, I trust your intuitions' when an assistant asks for direction.">
-        <span class="btn-label">Auto-Run</span>
-        <span class="btn-state" id="autoRunState">OFF</span>
-      </button>
-    </div>
-  </details>
-
-  <details class="section">
-    <summary class="section-summary"><h2 class="section-title">Send Initial Prompt</h2></summary>
+    <summary class="section-summary"><h2 class="section-title">Start a Chat</h2></summary>
     <div class="stack">
       <select id="promptTarget" class="select" aria-label="Chat target"></select>
       <textarea id="promptText" class="textarea" rows="8" placeholder="Type the prompt to seed the chat with..."></textarea>
-      <div class="row">
-        <button id="sendPromptBtn" class="btn" type="button">Send</button>
-        <button id="savePromptBtn" class="btnSmall" type="button" title="Save current text as the default prompt.">Save Default</button>
-      </div>
+      <button id="sendPromptBtn" class="btn btn-block" type="button">Start</button>
     </div>
   </details>
 
-  <details class="section" open>
+  <details class="section" id="active-fires-section">
     <summary class="section-summary">
-      <h2 class="section-title">Affected Chats</h2>
-      <button id="clearChatsBtn" class="btnSmall section-action" type="button" title="Clear all tracked chats and the allowlist.">Clear</button>
+      <h2 class="section-title">Active Fires</h2>
     </summary>
-    <p class="section-hint">Chats Auto-Run will press Allow / Keep on. Add via <strong>Send Initial Prompt</strong> or <code>@lakeburner start</code>; remove via <code>@lakeburner stop</code> in that chat.</p>
+    <p class="section-hint">Active chat sessions LakeBurner is running. Add via <strong>Start a Chat</strong> or <code>@lakeburner start</code>; remove via the trash icon or <code>@lakeburner stop</code>.</p>
     <div id="affected-chats" class="affected-chats" aria-live="polite"></div>
   </details>
 
-  <details class="section" open>
+  <details class="section" id="activity-section">
     <summary class="section-summary">
       <h2 class="section-title">Activity</h2>
-      <button id="popoutActivityBtn" class="btnSmall section-action" type="button" title="Open Activity in a larger panel beside the editor for real-time monitoring">Popout</button>
-      <button id="copyActivityBtn" class="btnSmall section-action" type="button" title="Copy all activity entries to the clipboard">Copy</button>
-      <button id="clearActivityBtn" class="btnSmall section-action" type="button">Clear</button>
+      <button id="popoutActivityBtn" class="icon-btn section-action" type="button" aria-label="Popout" data-tooltip="Popout"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M9 1h6v6h-1V3.5L8.5 9 8 8.5 13.5 3H10V2h5v5h-1V3.5zM2 3h5v1H3v9h9V8h1v6H2V3z"/></svg></button>
+      <button id="copyActivityBtn" class="icon-btn section-action" type="button" aria-label="Copy" data-tooltip="Copy"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4 4v10h8V4H4zm7 9H5V5h6v8zM2 2v10h1V3h7V2H2z"/></svg></button>
+      <button id="clearActivityBtn" class="icon-btn section-action" type="button" aria-label="Clear" data-tooltip="Clear"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3h3v1h-1v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4H3V3h3V2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1zm-1 0V2H7v1h2zm-4 1v9h6V4H5zm2 2h1v5H7V6zm2 0h1v5H9V6z"/></svg></button>
     </summary>
+    <select id="activitySessionFilter" class="select" aria-label="Filter by session"></select>
     <div id="activity-log" class="activity-log" aria-live="polite"></div>
+  </details>
+
+  <details class="section">
+    <summary class="section-summary"><h2 class="section-title">Overlords</h2></summary>
+    <div id="provider-list" class="provider-list"></div>
   </details>
 
   <script nonce="${nonce}" src="${jsUri}"></script>

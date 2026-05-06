@@ -25,7 +25,7 @@ export function activate(context: vscode.ExtensionContext) {
   const affected = new AffectedChats(context, CFG_SECTION, logger);
   // Reset the Affected Chats registry on every activation so each LakeBurner
   // session starts cold — no chats are armed until the user explicitly arms
-  // one (Send Initial Prompt or @lakeburner start). Fire-and-forget; the
+  // one (Start a Chat or @lakeburner start). Fire-and-forget; the
   // globalState write is fast and not awaited by anything below.
   void affected.clearAll().then(() => {
     activity.add("INFO", "Affected Chats reset for new session");
@@ -36,7 +36,7 @@ export function activate(context: vscode.ExtensionContext) {
   const ticker = new AutoRunTicker(CFG_SECTION, logger, autoRun, autoClicker, affected, activity, dispatcher);
   ticker.start(context);
 
-  const popout = new ActivityPopout(context, activity);
+  const popout = new ActivityPopout(context, activity, affected);
   context.subscriptions.push(popout);
 
   const provider = new WebviewHost(context, CFG_SECTION, logger, monitor, activity, autoRun, autoClicker, dispatcher, affected, popout);
@@ -52,7 +52,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(autoRun.onChange(() => provider.broadcastAutoRun()));
   context.subscriptions.push(affected.onChange(() => provider.broadcastAffectedChats()));
 
-  registerLakeBurnerParticipant(context, logger, activity, autoRun, CFG_SECTION, affected);
+  registerLakeBurnerParticipant(context, logger, activity, autoRun, CFG_SECTION, affected, dispatcher);
   registerLakeBurnerLmTools(context, logger, autoRun, activity);
 
   context.subscriptions.push(
@@ -67,7 +67,7 @@ export function activate(context: vscode.ExtensionContext) {
       if (!targetId) {
         const pick = await vscode.window.showQuickPick(
           targets.map((t) => ({ label: t.label, description: t.command, id: t.id })),
-          { title: "LakeBurner: Send Initial Prompt", placeHolder: "Select a chat target" }
+          { title: "LakeBurner: Start a Chat", placeHolder: "Select a chat target" }
         );
         if (!pick) return;
         targetId = pick.id;

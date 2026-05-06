@@ -30,10 +30,19 @@ export class ActivityLog {
       message,
       data,
     };
+
+    if (kind === "INFO") {
+      this.logger.info({ fn: "ActivityLog.add" }, message, data);
+      return entry;
+    }
+
     this.entries.push(entry);
     if (this.entries.length > MAX_ENTRIES) this.entries.splice(0, this.entries.length - MAX_ENTRIES);
 
-    this.logger.info({ fn: "ActivityLog.add" }, message, { kind, data });
+    if (kind === "REQUEST") this.logger.user({ fn: "ActivityLog.add" }, message, data);
+    else if (kind === "APPROVE") this.logger.task({ fn: "ActivityLog.add" }, message, data);
+    else this.logger.warn({ fn: "ActivityLog.add" }, message, data);
+
     this.emitter.fire();
     return entry;
   }

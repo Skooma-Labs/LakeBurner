@@ -52,7 +52,7 @@ export class AffectedChats {
    * Register (or bump) a session and return its ID. Called from the chat
    * participant on every @lakeburner turn.
    */
-  public registerTurn(firstPrompt: string, currentPrompt: string): string {
+  public async registerTurn(firstPrompt: string, currentPrompt: string): Promise<string> {
     const id = AffectedChats.fingerprint(firstPrompt || currentPrompt);
     const now = new Date().toISOString();
     const all = this.readAll();
@@ -73,13 +73,24 @@ export class AffectedChats {
         const set = new Set(this.listAllowedIds());
         if (!set.has(id)) {
           set.add(id);
-          void this.context.globalState.update(ALLOWLIST_KEY, Array.from(set));
+          await this.context.globalState.update(ALLOWLIST_KEY, Array.from(set));
           this.logger.user({ fn: "registerTurn" }, "Auto-Allowlisted New Session", { id });
         }
       }
     }
-    void this.context.globalState.update(STATE_KEY, all);
+    await this.context.globalState.update(STATE_KEY, all);
     this.emitter.fire();
+    return id;
+  }
+
+  /**
+   * Register the current chat turn and make it active for Auto-Run in one
+   * awaited operation. Used by `@lakeburner start` so an existing chat is
+   * promoted to Active Fires with the same reliability as Start a Chat.
+   */
+  public async igniteTurn(firstPrompt: string, currentPrompt: string): Promise<string> {
+    const id = await this.registerTurn(firstPrompt, currentPrompt);
+    await this.setAllowed(id, true);
     return id;
   }
 

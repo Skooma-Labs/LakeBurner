@@ -26,13 +26,7 @@ export type DispatchResult = {
 const DEFAULT_TARGETS: PromptTarget[] = [
   {
     id: "copilot",
-    label: "GitHub Copilot Chat",
-    command: "workbench.action.chat.open",
-    mode: "object-query",
-  },
-  {
-    id: "copilot-agent",
-    label: "GitHub Copilot Chat (Agent)",
+    label: "GitHub Copilot",
     command: "workbench.action.chat.open",
     mode: "object-query",
     extraArgs: { mode: "agent" },
@@ -45,7 +39,7 @@ const DEFAULT_TARGETS: PromptTarget[] = [
   },
   {
     id: "codex",
-    label: "OpenAI Codex / ChatGPT",
+    label: "OpenAI Codex",
     command: "chatgpt.newChat",
     mode: "clipboard",
   },

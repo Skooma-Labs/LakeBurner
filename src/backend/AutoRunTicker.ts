@@ -156,6 +156,13 @@ export class AutoRunTicker implements vscode.Disposable {
       // Only log when at least one strategy did something useful.
       if (allowResult.ok || keepResult.ok) {
         this.lastFireAt = Date.now();
+        // A successful Allow/Keep press means the chat just resumed work
+        // (we approved a tool call or kept an edit). The busy indicator
+        // will appear momentarily but the probe may miss it on the next
+        // tick due to timing — so treat this press as proof of activity
+        // and reset the busy clock. Without this, the idle countdown
+        // accumulates straight through tool approvals.
+        this.lastBusyAt = Date.now();
         this.idleStreak = 0;
         this.stallAnnouncedAt = 0;
         this.activity.add("APPROVE", `Tick #${this.tickCount} fired (Allow: ${allowResult.via}, Keep: ${keepResult.via})`, {
@@ -185,6 +192,8 @@ export class AutoRunTicker implements vscode.Disposable {
    * never be interrupted with a Keep Going.
    */
   private async maybeSendKeepGoing(cfg: vscode.WorkspaceConfiguration): Promise<void> {
+    if (!this.shouldRun()) return;
+
     const enabled = cfg.get<boolean>("autoRun.keepGoingEnabled", true);
     if (!enabled) return;
 
@@ -243,6 +252,26 @@ export class AutoRunTicker implements vscode.Disposable {
     const text = (cfg.get<string>("autoRun.keepGoingPrompt", "") || "").trim()
       || "Keep going. I trust your intuitions.\n\nIf the task is complete, find ways to improve what we've done in either quantity or quality. Our goal is endless generation with asymtotal diminishing returns. This verifies we reach a state where 'there is no more to be added' and 'the data quality cannot reliably through a variety of sources contemporary to the current year as it is in a state of maximum trustoworthiness'";
     const targetId = (cfg.get<string>("autoRun.keepGoingTargetId", "") || "").trim() || "copilot";
+
+    if (!this.shouldRun()) return;
+
+    // Final guard: re-probe immediately before dispatch. The earlier probe
+    // is N ticks old and the chat may have entered a new busy phase since.
+    // We must NEVER queue on top of an active generation — a queued prompt
+    // is worse than a missed one because it overrides whatever the user
+    // would have typed next.
+    const finalBusy = await this.autoClicker.uia.findBusyIndicator({ silent: true });
+    if (finalBusy) {
+      this.lastBusyAt = Date.now();
+      this.idleStreak = 0;
+      this.stallAnnouncedAt = 0;
+      this.activity.add(
+        "INFO",
+        `Aborting Keep Going dispatch — ${finalBusy} re-appeared in final-guard probe`,
+        { finalBusy }
+      );
+      return;
+    }
 
     this.lastKeepGoingAt = now;
     this.idleStreak = 0;

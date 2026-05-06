@@ -53,7 +53,7 @@
       },
       {
         "command": "lakeburner.sendInitialPrompt",
-        "title": "LakeBurner: Send Initial Prompt",
+        "title": "LakeBurner: Start a Chat",
         "category": "LakeBurner"
       }
     ],
@@ -295,14 +295,14 @@
         "lakeburner.uia.busyButtonNames": {
           "type": "array",
           "items": { "type": "string" },
-          "default": ["stop", "cancel", "loading", "queued", "generating", "working", "thinking", "running"],
+          "default": ["stop", "cancel", "loading", "queued", "generating", "working", "thinking", "running", "preparing", "creating", "editing", "applying", "executing", "fetching", "analyzing", "saving", "searching", "processing"],
           "markdownDescription": "Substrings (case-insensitive) the busy probe scans for across all chat-area controls. Any match suppresses the **Keep Going** stall-detector. Be intentionally generous — false positives just delay the prompt; false negatives queue on top of an active generation.",
           "scope": "application"
         },
         "lakeburner.uia.busyExcludePatterns": {
           "type": "array",
           "items": { "type": "string" },
-          "default": ["press \"", "press “", "(shift+", "(ctrl+", "(alt+", "(f5)", "(f9)", "(f10)", "(f11)", "lakeburner"],
+          "default": ["press \"", "press “", "(shift+", "(ctrl+", "(alt+", "(f5)", "(f9)", "(f10)", "(f11)", "lakeburner", "stop button gone", "until generation stops", "since last stop button", "holding indefinitely", "idle confirmation", "idle confirmed", "ticker skipped", "ticker started", "ticker stopped", "tick #", "aborting keep going", "session armed", "session disarmed", "@lakeburner", "auto-run", "uia pressed", "uia busy probe", "uia allow", "uia keep", "working for ", "thinking for ", "running for ", "generating for ", "processing for "],
           "markdownDescription": "Substrings (case-insensitive) that exclude controls from the busy scan even if they otherwise match a busy keyword. Filters out workbench chrome (debug toolbar, our own sidebar buttons) so they cannot be misread as chat activity.",
           "scope": "application"
         },

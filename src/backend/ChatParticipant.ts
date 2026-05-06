@@ -3,6 +3,7 @@ import type { Logger } from "../frontend/ts/Logger";
 import type { ActivityLog } from "./ActivityLog";
 import type { AutoRunMode } from "./AutoRunMode";
 import type { AffectedChats } from "./AffectedChats";
+import type { PromptDispatcher } from "./PromptDispatcher";
 
 const PARTICIPANT_ID = "lakeburner.harness";
 
@@ -24,7 +25,8 @@ export function registerLakeBurnerParticipant(
   activity: ActivityLog,
   autoRun: AutoRunMode,
   cfgSection: string,
-  affected: AffectedChats
+  affected: AffectedChats,
+  dispatcher?: PromptDispatcher
 ): void {
   if (!vscode.chat || typeof vscode.chat.createChatParticipant !== "function") {
     logger.warn({ fn: "registerLakeBurnerParticipant" }, "Chat API Unavailable; Skipping Participant Registration");
@@ -55,7 +57,10 @@ export function registerLakeBurnerParticipant(
         break;
       }
     }
-    const sessionId = affected.registerTurn(firstPrompt, prompt);
+    const sessionId =
+      command === "start"
+        ? await affected.igniteTurn(firstPrompt, prompt)
+        : await affected.registerTurn(firstPrompt, prompt);
 
     activity.add("REQUEST", `@lakeburner ${command ?? ""} ${prompt}`.trim(), {
       command,
@@ -73,14 +78,14 @@ export function registerLakeBurnerParticipant(
         return await handleContext(prompt, stream, activity, cfgSection, sessionId);
 
       case "start":
-        return await handleStart(stream, activity, affected, autoRun, sessionId);
+        return await handleStart(stream, activity, autoRun, sessionId);
 
       case "stop":
-        return await handleStop(stream, activity, affected, sessionId);
+        return await handleStop(stream, activity, affected, autoRun, sessionId);
 
       case "advise":
       default:
-        return await handleAdvise(prompt, stream, activity, autoRun, sessionId);
+        return await handleAdvise(prompt, stream, activity, autoRun, sessionId, dispatcher);
     }
   };
 
@@ -162,51 +167,71 @@ async function handleAdvise(
   stream: vscode.ChatResponseStream,
   activity: ActivityLog,
   autoRun: AutoRunMode,
-  sessionId: string
+  sessionId: string,
+  dispatcher?: PromptDispatcher
 ): Promise<vscode.ChatResult> {
-  const plan = prompt || "(no plan provided)";
+  // When the user just invokes @lakeburner (with or without text), prompt them
+  // for what they'd like LakeBurner to continue the conversation with, then
+  // dispatch that prompt into the active chat target.
+  stream.markdown(`**LakeBurner — Continue Chat**\n\n`);
 
-  if (autoRun.isEnabled) {
-    stream.markdown(`**LakeBurner — Auto-Run Direction**\n\n> ${autoRun.trustPhrase}\n`);
-    activity.add("APPROVE", `Auto-direction: ${autoRun.trustPhrase}`, { plan, source: "chat-participant", auto: true, sessionId });
-    return { metadata: { decision: "trust", auto: true, sessionId } };
+  // If the user provided text alongside the @lakeburner mention, use it as the prompt.
+  let continuePrompt = prompt;
+
+  if (!continuePrompt) {
+    // Ask the user what they'd like LakeBurner to continue with.
+    const input = await vscode.window.showInputBox({
+      title: "LakeBurner: Continue Chat",
+      prompt: "What prompt should LakeBurner continue this conversation with?",
+      placeHolder: "e.g. Keep going, improve the output quality...",
+      ignoreFocusOut: true,
+    });
+    if (!input || !input.trim()) {
+      stream.markdown(`No prompt provided — LakeBurner will not dispatch.\n`);
+      activity.add("INFO", "Continue prompt cancelled by user", { sessionId });
+      return { metadata: { decision: "cancelled", sessionId } };
+    }
+    continuePrompt = input.trim();
   }
 
-  stream.markdown(`**LakeBurner — Safe-Direction Advisor**\n\n`);
-  stream.markdown(`Proposed plan: \`${plan}\`\n\n`);
-  stream.markdown(
-    `LakeBurner's recommendation: take the **smallest reversible step first** and request user approval before any action that:\n` +
-      `- Modifies files outside the active editor\n` +
-      `- Writes to disk, the network, or shared infrastructure\n` +
-      `- Cannot be undone by a single \`Ctrl+Z\` or \`git reset --hard HEAD\`\n\n` +
-      `Use \`@lakeburner approve <action>\` to gate any of the above.\n`
-  );
+  // Ensure this session is in the affected chats allowlist.
+  activity.add("REQUEST", `Continue: ${continuePrompt}`, { sessionId, length: continuePrompt.length });
 
-  activity.add("INFO", `Advice issued for plan: ${plan}`, { sessionId });
-  return { metadata: { plan, sessionId } };
+  if (dispatcher) {
+    // Pick the first available target (default is Copilot Chat agent mode).
+    const targets = dispatcher.listTargets();
+    const target = targets.find((t) => t.id === "copilot") ?? targets[0];
+    if (target) {
+      stream.markdown(`Dispatching to **${target.label}**:\n> ${continuePrompt}\n`);
+      await dispatcher.send(target.id, continuePrompt);
+      activity.add("APPROVE", `Dispatched continue prompt → ${target.label}`, { sessionId, targetId: target.id });
+      return { metadata: { decision: "dispatched", sessionId, targetId: target.id } };
+    }
+  }
+
+  // Fallback: no dispatcher or no targets — just echo the trust phrase.
+  stream.markdown(`> ${autoRun.trustPhrase}\n`);
+  activity.add("APPROVE", `Auto-direction: ${autoRun.trustPhrase}`, { sessionId, auto: true });
+  return { metadata: { decision: "trust", auto: true, sessionId } };
 }
 
 async function handleStart(
   stream: vscode.ChatResponseStream,
   activity: ActivityLog,
-  affected: AffectedChats,
   autoRun: AutoRunMode,
   sessionId: string
 ): Promise<vscode.ChatResult> {
-  // Ensure the current session is allow-listed (auto-allow normally handles
-  // this on first turn, but `start` is the explicit opt-in either way).
-  await affected.setAllowed(sessionId, true);
-
-  const autoRunNote = autoRun.isEnabled
-    ? "Auto-Run is **ON** \u2014 Allow / Keep dialogs in this chat will be pressed automatically."
-    : "Auto-Run is currently **OFF** \u2014 turn it on in the LakeBurner sidebar to actually press anything.";
+  // `igniteTurn` already registered and allow-listed this conversation before
+  // we reached the command handler. Turning Auto-Run on here mirrors Start a
+  // Chat, but keeps the current chat as the active fire.
+  await autoRun.setEnabled(true);
 
   stream.markdown(
     `**LakeBurner \u2014 Session Armed**\n\n` +
-      `This chat session is now in the **Affected Chats** list. ${autoRunNote}\n\n` +
+      `This chat session is now in **Active Fires**. Auto-Run is **ON** \u2014 Allow / Keep dialogs will be pressed automatically and Keep Going prompts will begin after idle windows.\n\n` +
       `Send \`@lakeburner stop\` in this chat at any time to remove it.\n`
   );
-  activity.add("APPROVE", `Auto-Run armed via @lakeburner start`, { sessionId });
+  activity.add("APPROVE", `Active Fire ignited via @lakeburner start`, { sessionId });
   return { metadata: { armed: true, sessionId } };
 }
 
@@ -214,12 +239,14 @@ async function handleStop(
   stream: vscode.ChatResponseStream,
   activity: ActivityLog,
   affected: AffectedChats,
+  autoRun: AutoRunMode,
   sessionId: string
 ): Promise<vscode.ChatResult> {
-  await affected.removeSession(sessionId);
+  await autoRun.setEnabled(false);
+  await affected.clear();
   stream.markdown(
-    `**LakeBurner \u2014 Session Disarmed**\n\nRemoved from the Affected Chats list. Auto-Run will no longer press Allow / Keep on behalf of this chat.\n`
+    `**LakeBurner \u2014 Extinguished**\n\nAuto-Run is **OFF** and all Active Fires have been cleared. LakeBurner will no longer press Allow / Keep or send Keep Going prompts until you start it again.\n`
   );
-  activity.add("BLOCK", "Auto-Run disarmed via @lakeburner stop", { sessionId });
+  activity.add("BLOCK", "Auto-Run extinguished via @lakeburner stop", { sessionId });
   return { metadata: { armed: false, sessionId } };
 }

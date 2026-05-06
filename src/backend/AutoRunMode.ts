@@ -12,7 +12,10 @@ export class AutoRunMode {
     private readonly context: vscode.ExtensionContext,
     private readonly logger: Logger
   ) {
-    this.enabled = !!context.globalState.get<boolean>(STATE_KEY, false);
+    // Auto-Run is always on by default — LakeBurner is designed to maintain
+    // a continuous conversation loop. Users can still disable via command.
+    const stored = context.globalState.get<boolean>(STATE_KEY);
+    this.enabled = stored === undefined ? true : !!stored;
   }
 
   public readonly onChange = this.emitter.event;

@@ -59,6 +59,20 @@ export class UIAAutoClicker {
     "working",
     "thinking",
     "running",
+    // Tool-execution phases. Copilot tool calls don't always show a Stop
+    // button between sub-steps; instead the chat surfaces gerunds like
+    // "Preparing", "Creating file", "Analyzing". Without these, the idle
+    // countdown ticks straight through tool execution and we queue mid-run.
+    "preparing",
+    "creating",
+    "editing",
+    "applying",
+    "executing",
+    "fetching",
+    "analyzing",
+    "saving",
+    "searching",
+    "processing",
   ];
 
   /**
@@ -79,6 +93,41 @@ export class UIAAutoClicker {
     "(f10)",
     "(f11)",
     "lakeburner",
+    // LakeBurner activity-log phrases. Our own diagnostic text is rendered
+    // inside the sidebar/popout webviews, where it surfaces as UIA Text
+    // controls. The ancestor-name walk doesn't catch this \u2014 VS Code's
+    // webview wrapping doesn't propagate the panel title down to every
+    // descendant \u2014 so we filter by content instead. These phrases are
+    // unmistakably LakeBurner-generated; no real chat will produce them.
+    "stop button gone",
+    "until generation stops",
+    "since last stop button",
+    "holding indefinitely",
+    "idle confirmation",
+    "idle confirmed",
+    "ticker skipped",
+    "ticker started",
+    "ticker stopped",
+    "tick #",
+    "aborting keep going",
+    "session armed",
+    "session disarmed",
+    "@lakeburner",
+    "auto-run",
+    "uia pressed",
+    "uia busy probe",
+    "uia allow",
+    "uia keep",
+    // Completed turns in existing chat transcripts can leave historical
+    // elapsed-status text visible, e.g. "Working for 1m 17s". Those labels
+    // are not reliable proof that the current composer is still generating;
+    // a real active turn should still expose Stop/Cancel or a non-elapsed
+    // live status that the busy probe can catch.
+    "working for ",
+    "thinking for ",
+    "running for ",
+    "generating for ",
+    "processing for ",
   ];
 
   public isEnabled(): boolean {
@@ -128,7 +177,7 @@ export class UIAAutoClicker {
     const cfg = vscode.workspace.getConfiguration(this.cfgSection);
     const raw = cfg.get<unknown>("uia.busyButtonNames");
     if (Array.isArray(raw) && raw.length > 0) {
-      return raw.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+      return mergeConfiguredWithDefaults(raw, UIAAutoClicker.DEFAULT_BUSY_NAMES);
     }
     return UIAAutoClicker.DEFAULT_BUSY_NAMES;
   }
@@ -137,7 +186,7 @@ export class UIAAutoClicker {
     const cfg = vscode.workspace.getConfiguration(this.cfgSection);
     const raw = cfg.get<unknown>("uia.busyExcludePatterns");
     if (Array.isArray(raw) && raw.length > 0) {
-      return raw.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+      return mergeConfiguredWithDefaults(raw, UIAAutoClicker.DEFAULT_BUSY_EXCLUDES);
     }
     return UIAAutoClicker.DEFAULT_BUSY_EXCLUDES;
   }
@@ -226,6 +275,21 @@ type UIAResult = {
   };
 };
 
+function mergeConfiguredWithDefaults(raw: unknown[], defaults: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const value of [...raw, ...defaults]) {
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(trimmed);
+  }
+  return out;
+}
+
 function runUIAFinder(
   names: string[],
   processNames: string[],
@@ -308,6 +372,12 @@ foreach ($t in $typesToSearch) {
   $typeConds += New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, $t)
 }
 $searchCond = New-Object System.Windows.Automation.OrCondition($typeConds)
+
+# Walker used to climb parents from a hit so we can reject controls that
+# live inside LakeBurner's own panel. Without this, our activity log text
+# (e.g. "Chat busy (Working) ...") gets re-detected as a busy indicator
+# on subsequent ticks and the probe never reports idle.
+$walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
 
 $windowsByPid = @{}
 foreach ($child in $root.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)) {
@@ -393,6 +463,46 @@ foreach ($wins in $windowsByPid.Values) {
           if (-not $ctrl.Current.IsEnabled -or $ctrl.Current.IsOffscreen) { continue }
         } elseif ($ctrl.Current.IsOffscreen) {
           continue
+        }
+        # Walk up to 30 ancestors and skip the hit if any of them is the
+        # LakeBurner panel. This stops the busy probe from getting stuck on
+        # its own activity log entries (which legitimately contain words
+        # like "working" / "stop"). PROBE ONLY — for press paths the check
+        # is a footgun: if the workspace folder is named "LakeBurner", the
+        # top-level VS Code window's accessible name contains "lakeburner"
+        # and every Allow/Keep press inside that window gets filtered out.
+        # Press paths only scan Button/SplitButton/Hyperlink/MenuItem and
+        # our sidebar has no button literally named Allow/Keep, so press
+        # can't false-positive on our UI to begin with.
+        if ($probeOnly) {
+          $inLakeBurnerPanel = $false
+          try {
+            $cur = $walker.GetParent($ctrl)
+            $depth = 0
+            while ($cur -ne $null -and $depth -lt 30) {
+              try {
+                $parentName = $cur.Current.Name
+                if ($parentName) {
+                  $normParent = $parentName.Trim().ToLowerInvariant()
+                  # Match panels whose name STARTS WITH "lakeburner" (e.g.
+                  # "LakeBurner", "LakeBurner — Activity"). Ignore the top
+                  # window: its accessible name typically begins with the
+                  # active file path or "[Extension Development Host]" and
+                  # only contains "lakeburner" deeper in.
+                  if ($normParent.StartsWith("lakeburner")) {
+                    $inLakeBurnerPanel = $true
+                    break
+                  }
+                }
+              } catch {}
+              $cur = $walker.GetParent($cur)
+              $depth++
+            }
+          } catch {}
+          if ($inLakeBurnerPanel) {
+            if ($candidates.Count -lt 60) { [void]$candidates.Add($ctrlName) }
+            continue
+          }
         }
         if ($probeOnly) {
           # Just record the match; do not Invoke.

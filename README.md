@@ -34,7 +34,7 @@ npm run build
 4. Launch an Extension Development Host from the Run panel to try LakeBurner.
 
 Example Initial Prompt:  
-Please create a new csv file containing foods and datapoints about them inside of my "C:\Users\5798017\Downloads" folder
+@lakeburner Please create a CSV of various foods and information about them. Set that CSV in `C:\Users\5798017\Downloads` and name it "Cornucopia.csv". If one already exists, scan its contents and improve on it logically, qualitatively, or quantitvely.
 
 
 ## Features

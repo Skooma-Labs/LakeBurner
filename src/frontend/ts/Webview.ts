@@ -41,11 +41,13 @@ type OutgoingMessage =
   | { type: "autoRun.toggle" }
   | { type: "prompt.send"; targetId: string; prompt: string }
   | { type: "prompt.saveDefault"; prompt: string }
-  | { type: "affectedChats.setAllowed"; id: string; allowed: boolean }
+  | { type: "affectedChats.remove"; id: string }
   | { type: "affectedChats.clear" }
   | { type: "activity.clear" }
   | { type: "activity.copy" }
   | { type: "activity.popout" }
+  | { type: "provider.switch"; id: string }
+  | { type: "provider.login"; id: string }
   | {
       type: "lakeburner.hostlog";
       kind: "TASK" | "USER" | "INFO" | "WARN" | "ERROR";
@@ -124,10 +126,26 @@ function renderProviders(providers: ProviderInfo[]): void {
 
     card.appendChild(meta);
 
-    const badge = document.createElement("span");
-    badge.className = "badge";
-    badge.textContent = p.active ? "active" : p.installed ? "idle" : "missing";
-    card.appendChild(badge);
+    const actionBtn = document.createElement("button");
+    actionBtn.className = "provider-action-btn";
+    actionBtn.type = "button";
+    if (p.installed) {
+      actionBtn.textContent = "Switch";
+      actionBtn.title = `Switch to ${p.label}`;
+      actionBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        postMessageToHost({ type: "provider.switch", id: p.id });
+      });
+    } else {
+      actionBtn.textContent = "Login";
+      actionBtn.title = `Login / install ${p.label}`;
+      actionBtn.classList.add("login");
+      actionBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        postMessageToHost({ type: "provider.login", id: p.id });
+      });
+    }
+    card.appendChild(actionBtn);
 
     root.appendChild(card);
   }
@@ -202,6 +220,68 @@ function renderAutoRun(enabled: boolean): void {
 
 let promptInitialized = false;
 
+// Activity session filtering state
+let lastActivityEntries: ActivityEntry[] = [];
+let lastKnownSessions: ChatSessionRecord[] = [];
+
+function getSelectedSessionFilter(): string {
+  const filter = el<HTMLSelectElement>("activitySessionFilter");
+  return filter?.value ?? "all";
+}
+
+function updateActivitySessionFilter(sessions: ChatSessionRecord[]): void {
+  lastKnownSessions = sessions;
+  const filter = el<HTMLSelectElement>("activitySessionFilter");
+  if (!filter) return;
+
+  const previous = filter.value;
+  filter.innerHTML = "";
+
+  const allOpt = document.createElement("option");
+  allOpt.value = "all";
+  allOpt.textContent = "All sessions";
+  filter.appendChild(allOpt);
+
+  for (const s of sessions) {
+    const opt = document.createElement("option");
+    opt.value = s.id;
+    // Show the literal session-id in the dropdown — labels collide too easily
+    // (the chat title gets truncated to the same prefix for similar prompts)
+    // and the id is what the activity entries are tagged with.
+    opt.textContent = s.id;
+    opt.title = s.label;
+    filter.appendChild(opt);
+  }
+
+  if (previous === "all" || (previous && sessions.some((s) => s.id === previous))) {
+    filter.value = previous;
+  }
+
+  // Re-render activity with current filter
+  renderFilteredActivity();
+}
+
+function renderFilteredActivity(): void {
+  const selectedSession = getSelectedSessionFilter();
+  if (!selectedSession) {
+    renderActivity([]);
+    return;
+  }
+  // Untagged entries (autorun ticker chatter, system reset messages, etc.)
+  // are treated as global and shown for any selected session — they don't
+  // belong to one chat but they're still the relevant context for it.
+  const filtered = lastActivityEntries.filter((e) => {
+    const sid =
+      e.data && typeof e.data === "object"
+        ? (e.data as { sessionId?: unknown }).sessionId
+        : undefined;
+    if (selectedSession === "all") return true;
+    if (sid === undefined || sid === null || sid === "") return true;
+    return sid === selectedSession;
+  });
+  renderActivity(filtered);
+}
+
 function renderPrompt(targets: PromptTarget[], defaultPrompt: string): void {
   const select = el<HTMLSelectElement>("promptTarget");
   const text = el<HTMLTextAreaElement>("promptText");
@@ -225,9 +305,17 @@ function renderPrompt(targets: PromptTarget[], defaultPrompt: string): void {
   }
 }
 
-function renderAffectedChats(sessions: ChatSessionRecord[], allowedIds: string[]): void {
+function renderAffectedChats(sessions: ChatSessionRecord[], _allowedIds: string[]): void {
   const root = el<HTMLDivElement>("affected-chats");
   if (!root) return;
+
+  // Auto-expand the Active Fires and Activity sections when there are sessions
+  if (sessions.length > 0) {
+    const firesSection = document.getElementById("active-fires-section") as HTMLDetailsElement | null;
+    if (firesSection && !firesSection.open) firesSection.open = true;
+    const activitySection = document.getElementById("activity-section") as HTMLDetailsElement | null;
+    if (activitySection && !activitySection.open) activitySection.open = true;
+  }
 
   root.innerHTML = "";
 
@@ -235,27 +323,15 @@ function renderAffectedChats(sessions: ChatSessionRecord[], allowedIds: string[]
     const empty = document.createElement("div");
     empty.className = "activity-empty";
     empty.textContent =
-      "No chats armed. Send an Initial Prompt or invoke @lakeburner start in any chat to add it.";
+      "No active fires. Start a Chat or invoke @lakeburner start in any chat to add one.";
     root.appendChild(empty);
     return;
   }
 
-  const allowed = new Set(allowedIds);
-
   for (const s of sessions) {
-    const row = document.createElement("label");
+    const row = document.createElement("div");
     row.className = "chat-row";
     row.title = `id: ${s.id}\nturns: ${s.turns}\nlast: ${s.lastSeenIso}`;
-
-    const cb = document.createElement("input");
-    cb.type = "checkbox";
-    cb.className = "chat-cb";
-    cb.checked = allowed.has(s.id);
-    cb.title = allowed.has(s.id) ? "Armed" : "Tracked but not armed";
-    cb.addEventListener("change", () => {
-      postMessageToHost({ type: "affectedChats.setAllowed", id: s.id, allowed: cb.checked });
-    });
-    row.appendChild(cb);
 
     const meta = document.createElement("div");
     meta.className = "chat-meta";
@@ -272,6 +348,17 @@ function renderAffectedChats(sessions: ChatSessionRecord[], allowedIds: string[]
     meta.appendChild(sub);
 
     row.appendChild(meta);
+
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "chat-remove-btn";
+    removeBtn.type = "button";
+    removeBtn.title = "Remove from tracking";
+    removeBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3h3v1h-1v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4H3V3h3V2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1zm-1 0V2H7v1h2zm-4 1v9h6V4H5zm2 2h1v5H7V6zm2 0h1v5H9V6z"/></svg>`;
+    removeBtn.addEventListener("click", () => {
+      postMessageToHost({ type: "affectedChats.remove", id: s.id });
+    });
+    row.appendChild(removeBtn);
+
     root.appendChild(row);
   }
 }
@@ -282,6 +369,13 @@ function bindButtons(): void {
     autoRunBtn.addEventListener("click", () => {
       log.user("ui.autoRun.toggle", "Auto-Run Toggled");
       postMessageToHost({ type: "autoRun.toggle" });
+    });
+  }
+
+  const sessionFilter = el<HTMLSelectElement>("activitySessionFilter");
+  if (sessionFilter) {
+    sessionFilter.addEventListener("change", () => {
+      renderFilteredActivity();
     });
   }
 
@@ -326,28 +420,11 @@ function bindButtons(): void {
         log.warn("ui.prompt.send", "Send Skipped - missing target or prompt");
         return;
       }
-      log.user("ui.prompt.send", "Send Prompt Clicked", { targetId, length: prompt.length });
+      log.user("ui.prompt.send", "Start Chat Clicked", { targetId, length: prompt.length });
+      sendPromptBtn.disabled = true;
+      sendPromptBtn.classList.add("is-running");
+      sendPromptBtn.textContent = "Running...";
       postMessageToHost({ type: "prompt.send", targetId, prompt });
-    });
-  }
-
-  const savePromptBtn = el<HTMLButtonElement>("savePromptBtn");
-  if (savePromptBtn) {
-    savePromptBtn.addEventListener("click", () => {
-      const text = el<HTMLTextAreaElement>("promptText");
-      const prompt = text?.value ?? "";
-      log.user("ui.prompt.saveDefault", "Save Default Clicked", { length: prompt.length });
-      postMessageToHost({ type: "prompt.saveDefault", prompt });
-    });
-  }
-
-  const clearChatsBtn = el<HTMLButtonElement>("clearChatsBtn");
-  if (clearChatsBtn) {
-    clearChatsBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      log.user("ui.affectedChats.clear", "Clear Affected Chats Clicked");
-      postMessageToHost({ type: "affectedChats.clear" });
     });
   }
 }
@@ -360,7 +437,8 @@ function handleIncoming(message: IncomingMessage): void {
       renderProviders(message.providers ?? []);
       return;
     case "lakeburner.activity":
-      renderActivity(message.entries ?? []);
+      lastActivityEntries = message.entries ?? [];
+      renderFilteredActivity();
       return;
     case "lakeburner.autoRun":
       renderAutoRun(!!message.enabled);
@@ -370,6 +448,7 @@ function handleIncoming(message: IncomingMessage): void {
       return;
     case "lakeburner.affectedChats":
       renderAffectedChats(message.sessions ?? [], message.allowedIds ?? []);
+      updateActivitySessionFilter(message.sessions ?? []);
       return;
     case "lakeburner.error":
       log.error("host", message.reason);

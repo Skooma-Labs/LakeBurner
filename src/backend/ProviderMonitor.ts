@@ -10,9 +10,9 @@ export type ProviderInfo = {
 };
 
 const DEFAULT_PROVIDERS: { id: string; label: string }[] = [
-  { id: "GitHub.copilot-chat", label: "GitHub Copilot Chat" },
+  { id: "GitHub.copilot-chat", label: "GitHub Copilot" },
   { id: "anthropic.claude-code", label: "Claude Code" },
-  { id: "openai.chatgpt", label: "OpenAI Codex / ChatGPT" },
+  { id: "openai.chatgpt", label: "OpenAI Codex" },
 ];
 
 const POLL_INTERVAL_MS = 4000;
