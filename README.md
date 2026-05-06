@@ -73,7 +73,7 @@ Default targets:
 - `claude-code`: `claude-vscode.newConversation`, clipboard handoff
 - `codex`: `chatgpt.newChat`, clipboard handoff
 
-Targets can be overridden with `lakeburner.initialPrompt.targets`.
+Custom dispatch targets are intentionally kept out of the Settings UI; LakeBurner uses the built-in target list unless advanced JSON settings are supplied manually.
 
 ### Active Fires
 
@@ -224,7 +224,6 @@ This is optional under-the-hood observability support. LakeBurner does not depen
 ### General
 
 - `lakeburner.debugLevel`: Output verbosity, one of `Silent`, `Quiet`, or `Loud`.
-- `lakeburner.providers`: override watched provider extension IDs.
 
 ### Auto-Run
 
@@ -244,16 +243,9 @@ This is optional under-the-hood observability support. LakeBurner does not depen
 ### UI Automation
 
 - `lakeburner.uia.enabled`: enable Windows UI Automation. Default `true`.
-- `lakeburner.uia.processNames`: process names to scan. Defaults to `Code` and `Code - Insiders`.
-- `lakeburner.uia.allowButtonNames`: override accessible names treated as Allow.
-- `lakeburner.uia.keepButtonNames`: override accessible names treated as Keep.
-- `lakeburner.uia.busyButtonNames`: busy indicator substrings.
-- `lakeburner.uia.busyExcludePatterns`: substrings excluded from the busy scan.
 
 ### Command and Coordinate Fallbacks
 
-- `lakeburner.autoClick.commandIds`: command IDs used for Keep.
-- `lakeburner.autoApprove.commandIds`: command IDs used for Allow.
 - `lakeburner.autoClick.preferCommand`: try commands before UIA in non-ticker flows.
 - `lakeburner.autoClick.fallbackEnabled`: enable coordinate fallback. Default `false`.
 - `lakeburner.autoClick.fallbackPosition`: captured Keep click position.
@@ -262,7 +254,11 @@ This is optional under-the-hood observability support. LakeBurner does not depen
 ### Prompt Dispatch
 
 - `lakeburner.initialPrompt.default`: default text for Start a Chat.
-- `lakeburner.initialPrompt.targets`: custom dispatch targets.
+
+### Local Command Injection
+
+- `lakeburner.localCommandInjection.enabled`: listen on localhost for trusted local app commands. Default `true`.
+- `lakeburner.localCommandInjection.port`: localhost TCP port. Default `19816`.
 
 ## Commands
 

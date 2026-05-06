@@ -162,42 +162,6 @@
           "description": "The level of Verbosity Expected from LakeBurner in your Console Output.",
           "scope": "application"
         },
-        "lakeburner.providers": {
-          "type": "array",
-          "default": [],
-          "markdownDescription": "Override the watched AI provider extension IDs. Leave empty to use the built-in defaults (`GitHub.copilot-chat`, `anthropic.claude-code`, `openai.chatgpt`). Each entry may be a string ID or `{ \"id\": \"...\", \"label\": \"...\" }`.",
-          "scope": "application",
-          "items": {
-            "oneOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "object",
-                "required": [
-                  "id"
-                ],
-                "properties": {
-                  "id": {
-                    "type": "string"
-                  },
-                  "label": {
-                    "type": "string"
-                  }
-                }
-              }
-            ]
-          }
-        },
-        "lakeburner.autoClick.commandIds": {
-          "type": "array",
-          "default": [],
-          "markdownDescription": "Ordered list of VS Code command IDs to invoke when pressing the Copilot \"Keep\" button. Leave empty to use the built-in defaults (Copilot Chat 0.45.x review.apply / acceptDiff IDs). LakeBurner tries each in turn; the first that doesn't throw wins.",
-          "items": {
-            "type": "string"
-          },
-          "scope": "application"
-        },
         "lakeburner.autoClick.fallbackEnabled": {
           "type": "boolean",
           "default": false,
@@ -221,15 +185,6 @@
             "y": {
               "type": "number"
             }
-          },
-          "scope": "application"
-        },
-        "lakeburner.autoApprove.commandIds": {
-          "type": "array",
-          "default": [],
-          "markdownDescription": "Ordered list of VS Code command IDs to invoke when pressing a chat tool-confirmation button (\"Allow Once\", \"Allow in this Session\", etc.). Leave empty to use the built-in defaults. Public commands for these dialogs are sparse — the coordinate fallback is usually required.",
-          "items": {
-            "type": "string"
           },
           "scope": "application"
         },
@@ -282,7 +237,7 @@
         "lakeburner.autoRun.keepGoingTargetId": {
           "type": "string",
           "default": "copilot",
-          "markdownDescription": "Target id (matching one of `lakeburner.initialPrompt.targets`) that receives the **Keep Going** prompt. Defaults to `copilot`.",
+          "markdownDescription": "Target id that receives the **Keep Going** prompt. Built-in ids are `copilot`, `claude-code`, and `codex`. Defaults to `copilot`.",
           "scope": "application"
         },
         "lakeburner.autoRun.keepGoingIdleStreak": {
@@ -290,20 +245,6 @@
           "default": 3,
           "minimum": 1,
           "markdownDescription": "How many consecutive ticker scans must show **no Allow/Keep button AND no chat Stop/Cancel button** before the **Keep Going** prompt is dispatched. Higher values reduce the chance of queueing a prompt while the assistant is still streaming.",
-          "scope": "application"
-        },
-        "lakeburner.uia.busyButtonNames": {
-          "type": "array",
-          "items": { "type": "string" },
-          "default": ["stop", "cancel", "loading", "queued", "generating", "working", "thinking", "running", "preparing", "creating", "editing", "applying", "executing", "fetching", "analyzing", "saving", "searching", "processing"],
-          "markdownDescription": "Substrings (case-insensitive) the busy probe scans for across all chat-area controls. Any match suppresses the **Keep Going** stall-detector. Be intentionally generous — false positives just delay the prompt; false negatives queue on top of an active generation.",
-          "scope": "application"
-        },
-        "lakeburner.uia.busyExcludePatterns": {
-          "type": "array",
-          "items": { "type": "string" },
-          "default": ["press \"", "press “", "(shift+", "(ctrl+", "(alt+", "(f5)", "(f9)", "(f10)", "(f11)", "lakeburner", "stop button gone", "until generation stops", "since last stop button", "holding indefinitely", "idle confirmation", "idle confirmed", "ticker skipped", "ticker started", "ticker stopped", "tick #", "aborting keep going", "session armed", "session disarmed", "@lakeburner", "auto-run", "uia pressed", "uia busy probe", "uia allow", "uia keep", "working for ", "thinking for ", "running for ", "generating for ", "processing for "],
-          "markdownDescription": "Substrings (case-insensitive) that exclude controls from the busy scan even if they otherwise match a busy keyword. Filters out workbench chrome (debug toolbar, our own sidebar buttons) so they cannot be misread as chat activity.",
           "scope": "application"
         },
         "lakeburner.affectedChats.windowDays": {
@@ -339,73 +280,16 @@
           "markdownDescription": "Enable the Windows UI Automation strategy for pressing Allow / Keep buttons. Searches the accessibility tree of VS Code's process for a button by accessible name and invokes it without moving the mouse. Far more robust than the fixed-coordinate fallback. Windows-only.",
           "scope": "application"
         },
-        "lakeburner.uia.allowButtonNames": {
-          "type": "array",
-          "default": [],
-          "markdownDescription": "Override the list of accessible button names the UIA finder will treat as **Allow**. Leave empty for built-in defaults (`Allow Once`, `Allow in this Session`, `Allow in this Workspace`, `Allow`, `Continue`).",
-          "items": { "type": "string" },
-          "scope": "application"
-        },
-        "lakeburner.uia.keepButtonNames": {
-          "type": "array",
-          "default": [],
-          "markdownDescription": "Override the list of accessible button names the UIA finder will treat as **Keep**. Leave empty for built-in defaults (`Keep`, `Apply`, `Apply and next`, `Accept`, `Accept All`).",
-          "items": { "type": "string" },
-          "scope": "application"
-        },
-        "lakeburner.uia.processNames": {
-          "type": "array",
-          "default": [],
-          "markdownDescription": "Process names whose top-level windows the UIA finder will scan. Leave empty for built-in defaults (`Code`, `Code - Insiders`). Restrict to your editor's process so we never click buttons in other apps.",
-          "items": { "type": "string" },
-          "scope": "application"
-        },
         "lakeburner.initialPrompt.default": {
           "type": "string",
           "default": "",
           "markdownDescription": "Default text seeded into the LakeBurner **Send Initial Prompt** textarea. Use the **Save Default** button in the side panel to update.",
           "scope": "application"
         },
-        "lakeburner.initialPrompt.targets": {
-          "type": "array",
-          "default": [],
-          "markdownDescription": "Override the chat targets shown in the **Send Initial Prompt** dropdown. Leave empty for the built-in defaults (Copilot Chat, Copilot Chat Agent, Claude Code, OpenAI Codex). Each entry is `{ id, label, command, mode, extraArgs? }` where `mode` is `\"string\"`, `\"object-query\"`, or `\"clipboard\"`.",
-          "items": {
-            "type": "object",
-            "required": [
-              "id",
-              "command",
-              "mode"
-            ],
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "label": {
-                "type": "string"
-              },
-              "command": {
-                "type": "string"
-              },
-              "mode": {
-                "type": "string",
-                "enum": [
-                  "string",
-                  "object-query",
-                  "clipboard"
-                ]
-              },
-              "extraArgs": {
-                "type": "object"
-              }
-            }
-          },
-          "scope": "application"
-        },
         "lakeburner.localCommandInjection.enabled": {
           "type": "boolean",
-          "default": false,
-          "markdownDescription": "When `true`, LakeBurner listens on a local TCP port (`127.0.0.1:19816`) for command injection from trusted local applications (e.g. IcedPlate Hermaeus). Only accepts connections from localhost. Requires extension restart to take effect.",
+          "default": true,
+          "markdownDescription": "When `true`, LakeBurner listens on a local TCP port (`127.0.0.1:19816`) for command injection from trusted local applications (e.g. IcedPlate Hermaeus). Only accepts connections from localhost.",
           "scope": "application"
         },
         "lakeburner.localCommandInjection.port": {
