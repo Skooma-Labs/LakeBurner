@@ -140,7 +140,7 @@ function renderProviders(providers: ProviderInfo[]): void {
     actionBtn.className = "provider-action-btn";
     actionBtn.type = "button";
     if (p.installed) {
-      actionBtn.textContent = "Switch";
+      actionBtn.textContent = "Switch User";
       actionBtn.title = `Switch to ${p.label}`;
       actionBtn.addEventListener("click", (e) => {
         e.stopPropagation();
