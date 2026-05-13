@@ -21,7 +21,9 @@ type IncomingFromWebview =
   | { type: "activity.clear" }
   | { type: "activity.copy" }
   | { type: "activity.popout" }  | { type: "provider.switch"; id: string }
-  | { type: "provider.login"; id: string }  | HostLogEnvelope
+  | { type: "provider.login"; id: string }
+  | { type: "settings.open" }
+  | HostLogEnvelope
   | { type: string; [key: string]: unknown };
 
 type OutgoingToWebview =
@@ -236,6 +238,12 @@ export class WebviewHost implements vscode.WebviewViewProvider {
             return;
           }
 
+          case "settings.open": {
+            await vscode.commands.executeCommand("workbench.action.openSettings", `@ext:${this.context.extension.id}`);
+            this.logger.user({ fn: "onDidReceiveMessage" }, "Settings Opened");
+            return;
+          }
+
           default:
             this.logger.info({ fn: "onDidReceiveMessage" }, "Message Type Ignored", { type: incoming.type });
             return;
@@ -311,15 +319,26 @@ export class WebviewHost implements vscode.WebviewViewProvider {
     if (accounts.length > 0) {
       const items: vscode.QuickPickItem[] = [
         ...accounts.map((a) => ({ label: a.email, description: "Stored account" })),
-        { label: "Connect another account", description: "", kind: vscode.QuickPickItemKind.Separator },
-        { label: "Connect another account", description: "Add a new email + password" },
+        { label: "", description: "", kind: vscode.QuickPickItemKind.Separator },
+        { label: "$(add) Connect another account", description: "Add a new email + password" },
+        { label: "$(edit) Edit password", description: "Update the password for a stored account" },
+        { label: "$(trash) Remove account", description: "Delete a stored account" },
       ];
       const pick = await vscode.window.showQuickPick(items, {
         title: `LakeBurner: Switch User — ${providerLabel}`,
-        placeHolder: "Select an account or connect a new one",
+        placeHolder: "Select an account or manage credentials",
       });
       if (!pick) return;
-      if (pick.label !== "Connect another account") {
+
+      if (pick.label === "$(edit) Edit password") {
+        await this.handleEditPassword(secretKey, providerLabel, accounts);
+        return;
+      }
+      if (pick.label === "$(trash) Remove account") {
+        await this.handleRemoveAccount(secretKey, providerLabel, accounts);
+        return;
+      }
+      if (!pick.label.startsWith("$(")) {
         selectedEmail = pick.label;
       }
     }
@@ -356,6 +375,51 @@ export class WebviewHost implements vscode.WebviewViewProvider {
     this.activity.add("INFO", `Switched to ${selectedEmail} for ${providerLabel}`, { providerId, email: selectedEmail });
     vscode.window.showInformationMessage(`LakeBurner: Switched to ${selectedEmail} for ${providerLabel}`);
     this.logger.user({ fn: "handleSwitchUser" }, "User Switched", { providerId, email: selectedEmail });
+  }
+
+  private async handleEditPassword(
+    secretKey: string,
+    providerLabel: string,
+    accounts: { email: string; password: string }[]
+  ): Promise<void> {
+    const pick = await vscode.window.showQuickPick(
+      accounts.map((a) => ({ label: a.email })),
+      { title: `LakeBurner: Edit Password — ${providerLabel}`, placeHolder: "Select the account to update" }
+    );
+    if (!pick) return;
+
+    const account = accounts.find((a) => a.email === pick.label);
+    if (!account) return;
+
+    const password = await vscode.window.showInputBox({
+      title: `LakeBurner: New Password — ${pick.label}`,
+      prompt: "Enter the new password",
+      password: true,
+      ignoreFocusOut: true,
+    });
+    if (!password) return;
+
+    account.password = password;
+    await this.context.secrets.store(secretKey, JSON.stringify(accounts));
+    this.logger.user({ fn: "handleEditPassword" }, "Password Updated", { email: pick.label });
+    vscode.window.showInformationMessage(`LakeBurner: Password updated for ${pick.label}`);
+  }
+
+  private async handleRemoveAccount(
+    secretKey: string,
+    providerLabel: string,
+    accounts: { email: string; password: string }[]
+  ): Promise<void> {
+    const pick = await vscode.window.showQuickPick(
+      accounts.map((a) => ({ label: a.email })),
+      { title: `LakeBurner: Remove Account — ${providerLabel}`, placeHolder: "Select the account to remove" }
+    );
+    if (!pick) return;
+
+    const updated = accounts.filter((a) => a.email !== pick.label);
+    await this.context.secrets.store(secretKey, JSON.stringify(updated));
+    this.logger.user({ fn: "handleRemoveAccount" }, "Account Removed", { email: pick.label });
+    vscode.window.showInformationMessage(`LakeBurner: Removed ${pick.label}`);
   }
 
   private getWebviewHtml(webview: vscode.Webview, nonce: string): string {
@@ -413,7 +477,10 @@ export class WebviewHost implements vscode.WebviewViewProvider {
   </details>
 
   <details class="section">
-    <summary class="section-summary"><h2 class="section-title">Overlords</h2></summary>
+    <summary class="section-summary">
+      <h2 class="section-title">Overlords</h2>
+      <button id="openSettingsBtn" class="icon-btn section-action" type="button" aria-label="Settings" data-tooltip="Settings"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M9.1 4.4L8.6 2H7.4l-.5 2.4-.7.3-2-1.3-.9.8 1.3 2-.3.7L2 7.4v1.2l2.4.5.3.7-1.3 2 .8.8 2-1.3.7.3.5 2.4h1.2l.5-2.4.7-.3 2 1.3.8-.8-1.3-2 .3-.7 2.4-.5V7.4l-2.4-.5-.3-.7 1.3-2-.8-.8-2 1.3-.7-.3zM8 10a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/></svg></button>
+    </summary>
     <div id="provider-list" class="provider-list"></div>
   </details>
 

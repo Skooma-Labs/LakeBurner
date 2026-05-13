@@ -60,6 +60,7 @@ type OutgoingMessage =
   | { type: "activity.popout" }
   | { type: "provider.switch"; id: string }
   | { type: "provider.login"; id: string }
+  | { type: "settings.open" }
   | {
       type: "lakeburner.hostlog";
       kind: "TASK" | "USER" | "INFO" | "WARN" | "ERROR";
@@ -468,6 +469,16 @@ function bindButtons(): void {
     singletCheckbox.addEventListener("change", () => {
       log.user("ui.singletMode.toggle", "Singlet Mode Toggled");
       postMessageToHost({ type: "singletMode.toggle" });
+    });
+  }
+
+  const settingsBtn = el<HTMLButtonElement>("openSettingsBtn");
+  if (settingsBtn) {
+    settingsBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      log.user("ui.settings.open", "Settings Clicked");
+      postMessageToHost({ type: "settings.open" });
     });
   }
 }
