@@ -3,16 +3,16 @@
   "displayName": "LakeBurner",
   "description": "User-Approval Harness for AI coding assistants. Sits beside Copilot Chat, Claude Code, and Codex inside VS Code, monitors their presence, and gates risky actions through @lakeburner.",
   "version": "0.8.6",
-  "publisher": "JBLDotExe",
+  "publisher": "skooma-labs",
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
-    "url": "https://github.com/JBLDotExe/LakeBurner"
+    "url": "https://github.com/skooma-labs/LakeBurner"
   },
   "bugs": {
-    "url": "https://github.com/JBLDotExe/LakeBurner/issues"
+    "url": "https://github.com/skooma-labs/LakeBurner/issues"
   },
-  "homepage": "https://github.com/JBLDotExe/LakeBurner#readme",
+  "homepage": "https://github.com/skooma-labs/LakeBurner#readme",
   "keywords": [
     "vscode",
     "extension",

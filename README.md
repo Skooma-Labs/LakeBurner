@@ -342,9 +342,9 @@ Before sharing broadly, add a `LICENSE` file and a `.vscodeignore` to keep the V
 
 ## License
 
-MIT
+AGPL-3.0-only — see [LICENSE](LICENSE) for the full text.
 
 ## Links
 
-- Repository: https://github.com/JBLDotExe/LakeBurner
-- Issues: https://github.com/JBLDotExe/LakeBurner/issues
+- Repository: https://github.com/skooma-labs/LakeBurner
+- Issues: https://github.com/skooma-labs/LakeBurner/issues
