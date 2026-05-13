@@ -1,17 +1,21 @@
 LakeBurner 1.0.0 TODO
 
 Feature - Start a Chat:
-✔ Auto-Run related Legacy Settings should be built into the 'Start a Chat' feature or adjusted: @done(26-05-13 15:13)
-    ✔ Nudge-Prompt Target is currently Single-Overlord. This should not be a setting but instead attached to the Start a Chat Overlord Dropdown selection. @done(26-05-13 15:13)
-✔ Singlet Mode Enable/Disable (Allows the conversation to end upon the first task completion. This mode makes it so that LakeBurner never sends the nudge-prompt) @done(26-05-13 14:47)
+    ✔ Uia: Enabled setting should be removed. This should be a built-in part of LakeBurner as part of its definitive purpose. This should always be enabled and therefore a setting is unnecessary. @done(26-05-13 15:40)
+    ✔ Auto-Run related Legacy Settings should be built into the 'Start a Chat' feature or adjusted: @done(26-05-13 15:13)
+        ✔ Nudge-Prompt Target is currently Single-Overlord. This should not be a setting but instead attached to the Start a Chat Overlord Dropdown selection. @done(26-05-13 15:13)
+    ✔ Singlet Mode Enable/Disable (Allows the conversation to end upon the first task completion. This mode makes it so that LakeBurner never sends the nudge-prompt) @done(26-05-13 14:47)
+
+Bug - Start a Chat:
+    ✔ 'Running' State should be fixed so that in no circumstance the 'Running....' state is stuck 'Running....' when the conversation is not running. (E.g. In the event of an error, auth not taken care of but chat attempted, etc) @done(26-05-13 14:46)
 
 Feature - Overlords:
-✔ 'Switch User' account storage feature should have an Account Manager built into the settings. @done(26-05-13 15:13)
-✔ The 'Switch' button label should be adjusted to 'Switch User' @done(26-05-13 14:46)
-✔ Functionality is operational. @done(26-05-13 14:46)
-    ✔ 'Switch User' should allow the User to provide Email+Pass for the specified Overlord to login. @done(26-05-13 14:46)
-    ✔ VSCode secure key vault/store should may potentially be utilized to store multiple accounts for each Overlord @done(26-05-13 14:46)
-    ✔ If multiple accounts are stored for an overlord, 'Switch User' should provide an Account selection dropdown for each account and an entry for 'Connect another account' @done(26-05-13 14:46)
+    ✔ 'Switch User' account storage feature should have an Account Managing Add/Edit/Remove List Box built into the settings. @done(26-05-13 15:33)
+    ✔ The 'Switch' button label should be adjusted to 'Switch User' @done(26-05-13 14:46)
+    ✔ Functionality is operational. @done(26-05-13 14:46)
+        ✔ 'Switch User' should allow the User to provide Email+Pass for the specified Overlord to login. @done(26-05-13 14:46)
+        ✔ VSCode secure key vault/store should may potentially be utilized to store multiple accounts for each Overlord @done(26-05-13 14:46)
+        ✔ If multiple accounts are stored for an overlord, 'Switch User' should provide an Account selection dropdown for each account and an entry for 'Connect another account' @done(26-05-13 14:46)
 
 Feature - Activity:
     ✔ Activity Box should be able to drag to grow/reduce height @done(26-05-13 15:13)
@@ -20,5 +24,9 @@ Feature - Activity:
         ✔ 'Newest First' Checkbox should be removed. Just default to 'Newest First' always. @done(26-05-13 15:13)
         ✔ Copy-to-Clipboard should also exist in the Activity Log window in addition to the TaskBar it's currently on. @done(26-05-13 15:13)
 
-Bug - Start a Chat:
-✔ 'Running' State should be fixed so that in no circumstance the 'Running....' state is stuck 'Running....' when the conversation is not running. (E.g. In the event of an error, auth not taken care of but chat attempted, etc) @done(26-05-13 14:46)
+Settings:
+    ✔ Settings should be split into sections based on their domain-of-effect. @done(26-05-13 15:43)
+        ✔ 'Start a Chat' Settings are located under a section of the same name @done(26-05-13 15:43)
+        ✔ 'Active Fires' Settings are located under a section of the same name @done(26-05-13 15:43)
+        ✔ 'Activity' Settings are located under a section of the same name @done(26-05-13 15:43)
+        ✔ 'Overlords' Settings are located under a section of the same name @done(26-05-13 15:43)

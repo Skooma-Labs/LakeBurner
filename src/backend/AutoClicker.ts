@@ -4,23 +4,30 @@ import type { Logger } from "../frontend/ts/Logger";
 import type { ActivityLog } from "./ActivityLog";
 import type { UIAAutoClicker } from "./UIAAutoClicker";
 
+type ClickIntent = "keep" | "allow";
+type PressResult = {
+  ok: boolean;
+  via: "command" | "uia" | "coordinate" | "none";
+  commandId?: string;
+  uiaName?: string;
+};
+type Point = { x: number; y: number };
+
+const KEEP_POSITION_KEY = "lakeburner.autoClick.keepFallbackPosition.v1";
+const ALLOW_POSITION_KEY = "lakeburner.autoClick.allowFallbackPosition.v1";
+
 /**
- * AutoClicker — best-effort "press the Keep button" pipeline.
+ * Best-effort Allow/Keep button pipeline.
  *
- * Strategy A (preferred): walk through a configurable list of VS Code command
- * IDs and execute the first one that doesn't throw. This is fully supported,
- * resilient to layout/DPI changes, and never moves the mouse.
+ * The order is fixed application logic:
+ *   1. UI Automation: visible button invoke, no mouse movement.
+ *   2. VS Code command IDs: useful when an extension exposes a command path.
+ *   3. Coordinate click: Windows-only final fallback when a calibrated point
+ *      exists in extension state.
  *
- * Strategy B (fallback): if every command failed AND the user has explicitly
- * opted into the coordinate fallback, spawn a short PowerShell script that
- * moves the OS mouse cursor to a calibrated (x, y) and synthesizes a left
- * click via user32::mouse_event. Brittle by design — provided as an escape
- * hatch when no command is exposed.
- *
- * Strategy B is OFF by default and requires:
- *   - lakeburner.autoClick.fallbackEnabled = true
- *   - lakeburner.autoClick.fallbackPosition.x and .y set
- *     (use the "LakeBurner: Calibrate Auto-Click Position" command)
+ * The public Settings UI does not expose strategy toggles. Advanced command
+ * ID arrays can still be supplied manually as hidden settings, and legacy
+ * coordinate settings are migrated into extension state if present.
  */
 export class AutoClicker {
   constructor(
@@ -31,9 +38,8 @@ export class AutoClicker {
     public readonly uia: UIAAutoClicker
   ) {}
 
-  // Defaults derived from GitHub Copilot Chat 0.45.x — see the Copilot Chat
-  // package.json for the full list. Order matters: try the most specific /
-  // most likely targets first.
+  // Defaults derived from GitHub Copilot Chat command IDs. Order matters: try
+  // the most specific / most likely targets first.
   private static readonly DEFAULT_KEEP_COMMAND_IDS = [
     "github.copilot.chat.review.applyAndNext",
     "github.copilot.chat.review.apply",
@@ -44,9 +50,6 @@ export class AutoClicker {
     "workbench.action.chat.applyAll",
   ];
 
-  // Best-effort defaults for chat tool-confirmation prompts ("Allow Once",
-  // "Allow in this Session", "Continue"). Public command coverage is thin,
-  // so the coordinate fallback is the reliable lever for this intent.
   private static readonly DEFAULT_ALLOW_COMMAND_IDS = [
     "workbench.action.chat.acceptElicitation",
     "chat.action.acceptElicitation",
@@ -55,7 +58,7 @@ export class AutoClicker {
     "workbench.action.chat.confirm",
   ];
 
-  private getCommandIds(intent: "keep" | "allow"): string[] {
+  private getCommandIds(intent: ClickIntent): string[] {
     const cfg = vscode.workspace.getConfiguration(this.cfgSection);
     const key = intent === "keep" ? "autoClick.commandIds" : "autoApprove.commandIds";
     const raw = cfg.get<unknown>(key);
@@ -65,13 +68,6 @@ export class AutoClicker {
     return intent === "keep" ? AutoClicker.DEFAULT_KEEP_COMMAND_IDS : AutoClicker.DEFAULT_ALLOW_COMMAND_IDS;
   }
 
-  /**
-   * Try the configured commands in order. Returns the ID of the command that
-   * succeeded, or null if every attempt threw.
-   *
-   * Pass `{ silent: true }` to suppress activity-log + warn logging on misses
-   * (used by the Auto-Run ticker so we don't spam the log every interval).
-   */
   public async pressKeepViaCommand(opts: { silent?: boolean } = {}): Promise<string | null> {
     return this.pressIntentViaCommand("keep", "Keep", opts);
   }
@@ -81,7 +77,7 @@ export class AutoClicker {
   }
 
   private async pressIntentViaCommand(
-    intent: "keep" | "allow",
+    intent: ClickIntent,
     label: string,
     opts: { silent?: boolean }
   ): Promise<string | null> {
@@ -108,10 +104,6 @@ export class AutoClicker {
     return null;
   }
 
-  /**
-   * Run the OS-level click fallback for the given intent. Each intent has its
-   * own calibrated position; the fallbackEnabled toggle is shared.
-   */
   public async pressKeepViaCoordinates(opts: { silent?: boolean } = {}): Promise<boolean> {
     return this.pressIntentViaCoordinates("keep", "Keep", opts);
   }
@@ -121,28 +113,13 @@ export class AutoClicker {
   }
 
   private async pressIntentViaCoordinates(
-    intent: "keep" | "allow",
+    intent: ClickIntent,
     label: string,
     opts: { silent?: boolean }
   ): Promise<boolean> {
-    const cfg = vscode.workspace.getConfiguration(this.cfgSection);
-    const enabled = cfg.get<boolean>("autoClick.fallbackEnabled", false);
-    if (!enabled) {
-      if (!opts.silent) this.logger.warn({ fn: "pressIntentViaCoordinates" }, "Coordinate Fallback Disabled", { intent });
-      return false;
-    }
-
-    const posKey = intent === "keep" ? "autoClick.fallbackPosition" : "autoApprove.fallbackPosition";
-    const pos = cfg.get<{ x?: number; y?: number }>(posKey, {});
-    const x = typeof pos?.x === "number" ? Math.round(pos.x) : NaN;
-    const y = typeof pos?.y === "number" ? Math.round(pos.y) : NaN;
-    if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      if (!opts.silent) {
-        this.logger.warn({ fn: "pressIntentViaCoordinates" }, "Position Not Calibrated", { intent });
-        vscode.window.showWarningMessage(
-          `LakeBurner: ${label} fallback position is not calibrated. Run "LakeBurner: Calibrate ${label} Click Position" first.`
-        );
-      }
+    const pos = await this.getCoordinatePosition(intent);
+    if (!pos) {
+      if (!opts.silent) this.logger.warn({ fn: "pressIntentViaCoordinates" }, "Position Not Calibrated", { intent });
       return false;
     }
 
@@ -152,9 +129,14 @@ export class AutoClicker {
     }
 
     try {
-      await runPowerShellClick(x, y);
-      this.logger.task({ fn: "pressIntentViaCoordinates" }, "OS Click Synthesized", { intent, x, y });
-      this.activity.add("APPROVE", `Synthesized ${label} click at (${x}, ${y})`, { strategy: "coordinate", intent, x, y });
+      await runPowerShellClick(pos.x, pos.y);
+      this.logger.task({ fn: "pressIntentViaCoordinates" }, "OS Click Synthesized", { intent, x: pos.x, y: pos.y });
+      this.activity.add("APPROVE", `Synthesized ${label} click at (${pos.x}, ${pos.y})`, {
+        strategy: "coordinate",
+        intent,
+        x: pos.x,
+        y: pos.y,
+      });
       return true;
     } catch (err: unknown) {
       const reason = err instanceof Error ? err.message : String(err);
@@ -166,104 +148,46 @@ export class AutoClicker {
     }
   }
 
-  /**
-   * Combined entry point. Default order is UIA → command → coordinate:
-   *
-   * UIA is preferred because it only succeeds when a real, visible, enabled
-   * button matching one of our accessible names is found and Invoke()'d in
-   * VS Code's own process. Several VS Code chat commands (notably
-   * `workbench.action.chat.acceptElicitation`) resolve without error even
-   * when nothing visible was pressed, which would otherwise mask UIA's
-   * far more reliable result.
-   *
-   * Set `lakeburner.autoClick.preferCommand = true` to flip back to the old
-   * command-first order.
-   */
-  public async pressKeep(opts: { silent?: boolean; uiaOnly?: boolean } = {}): Promise<{ ok: boolean; via: "command" | "uia" | "coordinate" | "none"; commandId?: string; uiaName?: string }> {
-    const preferCommand = vscode.workspace.getConfiguration(this.cfgSection).get<boolean>("autoClick.preferCommand", false);
+  public async pressKeep(opts: { silent?: boolean; uiaOnly?: boolean } = {}): Promise<PressResult> {
+    return this.pressIntent("keep", "Keep", opts);
+  }
+
+  public async pressAllow(opts: { silent?: boolean; uiaOnly?: boolean } = {}): Promise<PressResult> {
+    return this.pressIntent("allow", "Allow", opts);
+  }
+
+  private async pressIntent(
+    intent: ClickIntent,
+    label: "Allow" | "Keep",
+    opts: { silent?: boolean; uiaOnly?: boolean }
+  ): Promise<PressResult> {
     const tried: string[] = [];
 
-    if (preferCommand && !opts.uiaOnly) {
-      tried.push("command");
-      const commandId = await this.pressKeepViaCommand(opts);
-      if (commandId) {
-        this.logChainSummary("Keep", "command", tried, opts, { commandId });
-        return { ok: true, via: "command", commandId };
-      }
-    }
-
     tried.push("uia");
-    const uiaName = await this.uia.pressKeep(opts);
+    const uiaName = intent === "keep" ? await this.uia.pressKeep(opts) : await this.uia.pressAllow(opts);
     if (uiaName) {
-      this.logChainSummary("Keep", "uia", tried, opts, { uiaName });
+      this.logChainSummary(label, "uia", tried, opts, { uiaName });
       return { ok: true, via: "uia", uiaName };
     }
 
     if (opts.uiaOnly) {
-      this.logChainSummary("Keep", "none", tried, opts);
+      this.logChainSummary(label, "none", tried, opts);
       return { ok: false, via: "none" };
     }
 
-    if (!preferCommand) {
-      tried.push("command");
-      const commandId = await this.pressKeepViaCommand(opts);
-      if (commandId) {
-        this.logChainSummary("Keep", "command", tried, opts, { commandId });
-        return { ok: true, via: "command", commandId };
-      }
+    tried.push("command");
+    const commandId = intent === "keep" ? await this.pressKeepViaCommand(opts) : await this.pressAllowViaCommand(opts);
+    if (commandId) {
+      this.logChainSummary(label, "command", tried, opts, { commandId });
+      return { ok: true, via: "command", commandId };
     }
 
     tried.push("coordinate");
-    const ok = await this.pressKeepViaCoordinates(opts);
-    this.logChainSummary("Keep", ok ? "coordinate" : "none", tried, opts);
+    const ok = intent === "keep" ? await this.pressKeepViaCoordinates(opts) : await this.pressAllowViaCoordinates(opts);
+    this.logChainSummary(label, ok ? "coordinate" : "none", tried, opts);
     return { ok, via: ok ? "coordinate" : "none" };
   }
 
-  public async pressAllow(opts: { silent?: boolean; uiaOnly?: boolean } = {}): Promise<{ ok: boolean; via: "command" | "uia" | "coordinate" | "none"; commandId?: string; uiaName?: string }> {
-    const preferCommand = vscode.workspace.getConfiguration(this.cfgSection).get<boolean>("autoClick.preferCommand", false);
-    const tried: string[] = [];
-
-    if (preferCommand && !opts.uiaOnly) {
-      tried.push("command");
-      const commandId = await this.pressAllowViaCommand(opts);
-      if (commandId) {
-        this.logChainSummary("Allow", "command", tried, opts, { commandId });
-        return { ok: true, via: "command", commandId };
-      }
-    }
-
-    tried.push("uia");
-    const uiaName = await this.uia.pressAllow(opts);
-    if (uiaName) {
-      this.logChainSummary("Allow", "uia", tried, opts, { uiaName });
-      return { ok: true, via: "uia", uiaName };
-    }
-
-    if (opts.uiaOnly) {
-      this.logChainSummary("Allow", "none", tried, opts);
-      return { ok: false, via: "none" };
-    }
-
-    if (!preferCommand) {
-      tried.push("command");
-      const commandId = await this.pressAllowViaCommand(opts);
-      if (commandId) {
-        this.logChainSummary("Allow", "command", tried, opts, { commandId });
-        return { ok: true, via: "command", commandId };
-      }
-    }
-
-    tried.push("coordinate");
-    const ok = await this.pressAllowViaCoordinates(opts);
-    this.logChainSummary("Allow", ok ? "coordinate" : "none", tried, opts);
-    return { ok, via: ok ? "coordinate" : "none" };
-  }
-
-  /**
-   * Emit a single per-call chain-summary entry so a manual Press Allow/Keep
-   * click produces one diagnostic line in the activity log. Suppressed when
-   * `silent` is set (the ticker invokes us silently every interval).
-   */
   private logChainSummary(
     label: "Allow" | "Keep",
     outcome: "command" | "uia" | "coordinate" | "none",
@@ -275,25 +199,20 @@ export class AutoClicker {
     const kind = outcome === "none" ? "BLOCK" : "INFO";
     this.activity.add(
       kind,
-      `Press ${label} chain: tried [${tried.join(" → ")}] → ${outcome}`,
+      `Press ${label} chain: tried [${tried.join(" -> ")}] -> ${outcome}`,
       { strategy: "chain", label, outcome, tried, ...extra }
     );
   }
 
-  /**
-   * Capture the current cursor position (after a 3-second countdown) and
-   * persist it to settings. The user moves their mouse over the target button
-   * during the countdown.
-   */
   public async calibrateFallbackPosition(): Promise<void> {
-    return this.calibrateIntentPosition("keep", "Keep", "autoClick.fallbackPosition");
+    return this.calibrateIntentPosition("keep", "Keep");
   }
 
   public async calibrateAllowPosition(): Promise<void> {
-    return this.calibrateIntentPosition("allow", "Allow", "autoApprove.fallbackPosition");
+    return this.calibrateIntentPosition("allow", "Allow");
   }
 
-  private async calibrateIntentPosition(intent: "keep" | "allow", label: string, settingKey: string): Promise<void> {
+  private async calibrateIntentPosition(intent: ClickIntent, label: string): Promise<void> {
     if (process.platform !== "win32") {
       vscode.window.showErrorMessage("LakeBurner: Calibration is only supported on Windows.");
       return;
@@ -307,11 +226,11 @@ export class AutoClicker {
     if (choice !== "Start Countdown") return;
 
     for (let i = 3; i >= 1; i--) {
-      vscode.window.setStatusBarMessage(`LakeBurner: capturing ${label} position in ${i}…`, 900);
+      vscode.window.setStatusBarMessage(`LakeBurner: capturing ${label} position in ${i}...`, 900);
       await delay(1000);
     }
 
-    let pos: { x: number; y: number };
+    let pos: Point;
     try {
       pos = await readCursorPosition();
     } catch (err: unknown) {
@@ -321,16 +240,40 @@ export class AutoClicker {
       return;
     }
 
-    const cfg = vscode.workspace.getConfiguration(this.cfgSection);
-    await cfg.update(settingKey, pos, vscode.ConfigurationTarget.Global);
+    await this.context.globalState.update(this.positionStateKey(intent), pos);
 
     this.logger.task({ fn: "calibrateIntentPosition" }, "Calibration Saved", { intent, ...pos });
     this.activity.add("INFO", `Calibrated ${label} click position at (${pos.x}, ${pos.y})`);
-
     vscode.window.showInformationMessage(
-      `LakeBurner: captured ${label} at (${pos.x}, ${pos.y}). Enable "lakeburner.autoClick.fallbackEnabled" to use it.`
+      `LakeBurner: captured ${label} at (${pos.x}, ${pos.y}). Coordinate fallback will be used only if UIA and command pressing miss.`
     );
   }
+
+  private async getCoordinatePosition(intent: ClickIntent): Promise<Point | null> {
+    const stored = normalizePoint(this.context.globalState.get<Point>(this.positionStateKey(intent)));
+    if (stored) return stored;
+
+    const legacyKey = intent === "keep" ? "autoClick.fallbackPosition" : "autoApprove.fallbackPosition";
+    const legacy = normalizePoint(vscode.workspace.getConfiguration(this.cfgSection).get<unknown>(legacyKey, {}));
+    if (!legacy) return null;
+
+    await this.context.globalState.update(this.positionStateKey(intent), legacy);
+    this.logger.info({ fn: "getCoordinatePosition" }, "Migrated Legacy Coordinate Position", { intent, ...legacy });
+    return legacy;
+  }
+
+  private positionStateKey(intent: ClickIntent): string {
+    return intent === "keep" ? KEEP_POSITION_KEY : ALLOW_POSITION_KEY;
+  }
+}
+
+function normalizePoint(value: unknown): Point | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as { x?: unknown; y?: unknown };
+  const x = typeof raw.x === "number" ? Math.round(raw.x) : NaN;
+  const y = typeof raw.y === "number" ? Math.round(raw.y) : NaN;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x, y };
 }
 
 function delay(ms: number): Promise<void> {
@@ -359,7 +302,7 @@ function runPowerShell(script: string): Promise<string> {
   });
 }
 
-async function readCursorPosition(): Promise<{ x: number; y: number }> {
+async function readCursorPosition(): Promise<Point> {
   const script = `
 Add-Type -AssemblyName System.Windows.Forms | Out-Null
 $p = [System.Windows.Forms.Cursor]::Position
@@ -373,7 +316,6 @@ Write-Output ("{0},{1}" -f $p.X, $p.Y)
 }
 
 async function runPowerShellClick(x: number, y: number): Promise<void> {
-  // Add-Type emits a class once per session; in a fresh PS the cost is small.
   const script = `
 Add-Type -AssemblyName System.Windows.Forms | Out-Null
 Add-Type -Namespace LBN -Name Mouse -MemberDefinition @"

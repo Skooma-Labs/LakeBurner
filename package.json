@@ -103,11 +103,11 @@
           },
           {
             "name": "start",
-            "description": "Arm Auto-Run for this VS Code window so Allow / Keep dialogs are pressed automatically without per-session allowlisting."
+            "description": "Start Auto-Run for this chat and add it to Active Fires."
           },
           {
             "name": "stop",
-            "description": "Disarm Auto-Run. Stops the ticker from pressing Allow / Keep until you arm it again or tick a chat in the sidebar."
+            "description": "Stop Auto-Run and clear Active Fires."
           }
         ]
       }
@@ -148,171 +148,99 @@
         }
       }
     ],
-    "configuration": {
-      "title": "LakeBurner",
-      "properties": {
-        "lakeburner.debugLevel": {
-          "type": "string",
-          "default": "Quiet",
-          "enum": [
-            "Silent",
-            "Quiet",
-            "Loud"
-          ],
-          "enumDescriptions": [
-            "No output whatsoever.",
-            "Step progress only (TASK events).",
-            "Full verbose diagnostics. Steps and detailed information."
-          ],
-          "description": "The level of Verbosity Expected from LakeBurner in your Console Output.",
-          "scope": "application"
-        },
-        "lakeburner.autoClick.fallbackEnabled": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "When `true` and every command ID failed, synthesize an OS-level mouse click at the calibrated `lakeburner.autoClick.fallbackPosition`. Windows-only. **Brittle** — breaks on layout/DPI/theme changes.",
-          "scope": "application"
-        },
-        "lakeburner.autoClick.preferCommand": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "When `true`, try VS Code commands **before** the UI Automation strategy. Default order is UIA → command → coordinate, because some chat commands (notably `workbench.action.chat.acceptElicitation`) resolve silently with no error even when nothing visible was pressed.",
-          "scope": "application"
-        },
-        "lakeburner.autoClick.fallbackPosition": {
-          "type": "object",
-          "default": {},
-          "markdownDescription": "Captured screen coordinates `{ x, y }` for the **Keep** OS-click fallback. Set this with the **LakeBurner: Calibrate Keep Click Position** command.",
-          "properties": {
-            "x": {
-              "type": "number"
-            },
-            "y": {
-              "type": "number"
-            }
+    "configuration": [
+      {
+        "title": "General",
+        "properties": {
+          "lakeburner.debugLevel": {
+            "type": "string",
+            "default": "Quiet",
+            "enum": [
+              "Silent",
+              "Quiet",
+              "Loud"
+            ],
+            "enumDescriptions": [
+              "No output whatsoever.",
+              "Step progress only (TASK events).",
+              "Full verbose diagnostics. Steps and detailed information."
+            ],
+            "description": "The level of Verbosity Expected from LakeBurner in your Console Output.",
+            "scope": "application"
           },
-          "scope": "application"
-        },
-        "lakeburner.autoApprove.fallbackPosition": {
-          "type": "object",
-          "default": {},
-          "markdownDescription": "Captured screen coordinates `{ x, y }` for the **Allow** OS-click fallback. Set this with the **LakeBurner: Calibrate Allow Click Position** command.",
-          "properties": {
-            "x": {
-              "type": "number"
-            },
-            "y": {
-              "type": "number"
-            }
+          "lakeburner.localCommandInjection.enabled": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "When `true`, LakeBurner listens on a local TCP port (`127.0.0.1:19816`) for command injection from trusted local applications (e.g. IcedPlate Hermaeus). Only accepts connections from localhost.",
+            "scope": "application"
           },
-          "scope": "application"
-        },
-        "lakeburner.autoRun.tickIntervalMs": {
-          "type": "number",
-          "default": 3000,
-          "minimum": 0,
-          "markdownDescription": "Polling interval (milliseconds) for the Auto-Run ticker. While Auto-Run is ON **and** at least one chat is on the Affected Chats list, LakeBurner silently attempts **Allow** then **Keep** on this cadence via UIA only (no focus stealing, no mouse movement). **Default `3000`** — set to `0` to fully disable polling. The ticker is paused automatically whenever the Affected Chats list is empty.",
-          "scope": "application"
-        },
-        "lakeburner.autoRun.requireWindowFocus": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "When `true`, the Auto-Run ticker only fires while the VS Code window is focused. Prevents background ticks from approving things while you're working in another app.",
-          "scope": "application"
-        },
-        "lakeburner.singletMode.enabled": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "When `true`, a started chat session ends upon the first task completion. LakeBurner will **not** send the Keep Going nudge-prompt; instead it disables Auto-Run and clears Active Fires once the conversation goes idle.",
-          "scope": "application"
-        },
-        "lakeburner.autoRun.keepGoingEnabled": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "When `true`, the Auto-Run ticker dispatches a **continue** prompt to the configured chat target after `autoRun.keepGoingAfterIdleMs` of no Allow/Keep activity. Useful for nudging a finished assistant turn back into action without manual input.",
-          "scope": "application"
-        },
-        "lakeburner.autoRun.keepGoingAfterIdleMs": {
-          "type": "number",
-          "default": 15000,
-          "minimum": 0,
-          "markdownDescription": "How long the chat must be **provably idle** (no Stop/Cancel button visible in the chat input) before dispatching the **Keep Going** prompt. The same value is used as a cooldown between dispatches. The ticker NEVER queues on top of an active generation — if the assistant is still streaming the timer waits indefinitely. Set to `0` to disable (equivalent to `keepGoingEnabled = false`).",
-          "scope": "application"
-        },
-        "lakeburner.autoRun.keepGoingPrompt": {
-          "type": "string",
-          "default": "Keep going. I trust your intuitions.\n\nIf the task is complete, find ways to improve what we've done in either quantity or quality. Our goal is endless generation with asymtotal diminishing returns. This verifies we reach a state where 'there is no more to be added' and 'the data quality cannot reliably through a variety of sources contemporary to the current year as it is in a state of maximum trustoworthiness'",
-          "markdownDescription": "Text dispatched to the active chat target when the Auto-Run ticker decides the conversation has stalled.",
-          "scope": "application"
-        },
-        "lakeburner.autoRun.keepGoingTargetId": {
-          "type": "string",
-          "default": "copilot",
-          "markdownDescription": "Target id that receives the **Keep Going** prompt. Built-in ids are `copilot`, `claude-code`, and `codex`. Defaults to `copilot`.",
-          "scope": "application"
-        },
-        "lakeburner.autoRun.keepGoingIdleStreak": {
-          "type": "number",
-          "default": 3,
-          "minimum": 1,
-          "markdownDescription": "How many consecutive ticker scans must show **no Allow/Keep button AND no chat Stop/Cancel button** before the **Keep Going** prompt is dispatched. Higher values reduce the chance of queueing a prompt while the assistant is still streaming.",
-          "scope": "application"
-        },
-        "lakeburner.affectedChats.windowDays": {
-          "type": "number",
-          "default": 3,
-          "minimum": 1,
-          "markdownDescription": "How many days of chat history to keep visible in the **Affected Chats** list. Sessions older than this are pruned automatically.",
-          "scope": "application"
-        },
-        "lakeburner.affectedChats.autoAllowNewSessions": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "When `true`, every chat session newly registered by `@lakeburner` is added to the Auto-Run allowlist immediately. Disable to require an explicit tick in the **Affected Chats** sidebar before Auto-Run can act on a session.",
-          "scope": "application"
-        },
-        "lakeburner.affectedChats.recentActivityMs": {
-          "type": "number",
-          "default": 60000,
-          "minimum": 1000,
-          "markdownDescription": "The Auto-Run ticker only fires while at least one allow-listed chat session has been active within this many milliseconds. Default `60000` (1 minute).",
-          "scope": "application"
-        },
-        "lakeburner.autoRun.manualArmDurationMs": {
-          "type": "number",
-          "default": 1800000,
-          "minimum": 1000,
-          "markdownDescription": "How long to keep Auto-Run armed (bypassing the per-session allowlist) after `@lakeburner start` or **Send Initial Prompt** is invoked. Default `1800000` (30 minutes). Send `@lakeburner stop` to disarm early.",
-          "scope": "application"
-        },
-        "lakeburner.uia.enabled": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "Enable the Windows UI Automation strategy for pressing Allow / Keep buttons. Searches the accessibility tree of VS Code's process for a button by accessible name and invokes it without moving the mouse. Far more robust than the fixed-coordinate fallback. Windows-only.",
-          "scope": "application"
-        },
-        "lakeburner.initialPrompt.default": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "Default text seeded into the LakeBurner **Send Initial Prompt** textarea. Use the **Save Default** button in the side panel to update.",
-          "scope": "application"
-        },
-        "lakeburner.localCommandInjection.enabled": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "When `true`, LakeBurner listens on a local TCP port (`127.0.0.1:19816`) for command injection from trusted local applications (e.g. IcedPlate Hermaeus). Only accepts connections from localhost.",
-          "scope": "application"
-        },
-        "lakeburner.localCommandInjection.port": {
-          "type": "number",
-          "default": 19816,
-          "minimum": 1024,
-          "maximum": 65535,
-          "markdownDescription": "TCP port for the local command injection listener. Default `19816`. Only used when `lakeburner.localCommandInjection.enabled` is `true`.",
-          "scope": "application"
+          "lakeburner.localCommandInjection.port": {
+            "type": "number",
+            "default": 19816,
+            "minimum": 1024,
+            "maximum": 65535,
+            "markdownDescription": "TCP port for the local command injection listener. Default `19816`. Only used when `lakeburner.localCommandInjection.enabled` is `true`.",
+            "scope": "application"
+          }
+        }
+      },
+      {
+        "title": "Start a Chat",
+        "properties": {
+          "lakeburner.initialPrompt.default": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "Default text seeded into the LakeBurner **Send Initial Prompt** textarea. Use the **Save Default** button in the side panel to update.",
+            "scope": "application"
+          },
+          "lakeburner.singletMode.enabled": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "When `true`, a started chat session ends upon the first task completion. LakeBurner will **not** send the Keep Going nudge-prompt; instead it disables Auto-Run and clears Active Fires once the conversation goes idle.",
+            "scope": "application"
+          },
+          "lakeburner.autoRun.tickIntervalMs": {
+            "type": "number",
+            "default": 3000,
+            "minimum": 0,
+            "markdownDescription": "Polling interval (milliseconds) for the Auto-Run ticker. While Auto-Run is ON **and** at least one Active Fire exists, LakeBurner silently attempts **Allow** then **Keep** on this cadence via UIA only (no focus stealing, no mouse movement). **Default `3000`**.",
+            "scope": "application"
+          },
+          "lakeburner.autoRun.requireWindowFocus": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "When `true`, the Auto-Run ticker only fires while the VS Code window is focused. Prevents background ticks from approving things while you're working in another app.",
+            "scope": "application"
+          },
+          "lakeburner.autoRun.keepGoingEnabled": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "When `true`, the Auto-Run ticker dispatches a **continue** prompt to the configured chat target after `autoRun.keepGoingAfterIdleMs` of no Allow/Keep activity. Useful for nudging a finished assistant turn back into action without manual input.",
+            "scope": "application"
+          },
+          "lakeburner.autoRun.keepGoingAfterIdleMs": {
+            "type": "number",
+            "default": 15000,
+            "minimum": 0,
+            "markdownDescription": "How long the chat must be **provably idle** (no Stop/Cancel button visible in the chat input) before dispatching the **Keep Going** prompt. The same value is used as a cooldown between dispatches. The ticker NEVER queues on top of an active generation — if the assistant is still streaming the timer waits indefinitely. Set to `0` to disable (equivalent to `keepGoingEnabled = false`).",
+            "scope": "application"
+          },
+          "lakeburner.autoRun.keepGoingPrompt": {
+            "type": "string",
+            "default": "Keep going. I trust your intuitions.\n\nIf the task is complete, find ways to improve what we've done in either quantity or quality. Our goal is endless generation with asymtotal diminishing returns. This verifies we reach a state where 'there is no more to be added' and 'the data quality cannot reliably through a variety of sources contemporary to the current year as it is in a state of maximum trustoworthiness'",
+            "markdownDescription": "Text dispatched to the active chat target when the Auto-Run ticker decides the conversation has stalled.",
+            "scope": "application"
+          },
+          "lakeburner.autoRun.keepGoingIdleStreak": {
+            "type": "number",
+            "default": 3,
+            "minimum": 1,
+            "markdownDescription": "How many consecutive ticker scans must show **no Allow/Keep button AND no chat Stop/Cancel button** before the **Keep Going** prompt is dispatched. Higher values reduce the chance of queueing a prompt while the assistant is still streaming.",
+            "scope": "application"
+          }
         }
       }
-    }
+    ]
   },
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",

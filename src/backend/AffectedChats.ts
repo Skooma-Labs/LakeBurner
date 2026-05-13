@@ -3,8 +3,8 @@ import * as crypto from "crypto";
 import type { Logger } from "../frontend/ts/Logger";
 
 const STATE_KEY = "lakeburner.affectedChats.v1";
-const ALLOWLIST_KEY = "lakeburner.affectedChats.allowlist.v1";
-const ARM_KEY = "lakeburner.affectedChats.armUntil.v1";
+const LEGACY_ALLOWLIST_KEY = "lakeburner.affectedChats.allowlist.v1";
+const LEGACY_ARM_KEY = "lakeburner.affectedChats.armUntil.v1";
 const TARGET_KEY = "lakeburner.affectedChats.activeTargetId.v1";
 
 export type ChatSessionRecord = {
@@ -21,17 +21,13 @@ export type ChatSessionRecord = {
 };
 
 /**
- * AffectedChats — registry of chat sessions where @lakeburner has been invoked,
- * plus a user-controlled allowlist that gates which sessions Auto-Run may
- * affect via OS-level approval clicks.
+ * Active Fires registry. A chat is either active or it is not; there is no
+ * separate history window or user-controlled allowlist.
  *
  * Stable session IDs are derived by hashing the conversation's first user
  * prompt (taken from `ChatContext.history` or `request.prompt` on the very
  * first turn). VS Code's stable chat API does not expose a real session ID,
  * so this fingerprint is the most reliable handle we can build.
- *
- * Sessions older than `lakeburner.affectedChats.windowDays` (default 3 days)
- * are pruned on every read.
  */
 export class AffectedChats {
   private readonly emitter = new vscode.EventEmitter<void>();
@@ -39,7 +35,6 @@ export class AffectedChats {
 
   constructor(
     private readonly context: vscode.ExtensionContext,
-    private readonly cfgSection: string,
     private readonly logger: Logger
   ) {}
 
@@ -50,8 +45,26 @@ export class AffectedChats {
   }
 
   /**
-   * Register (or bump) a session and return its ID. Called from the chat
-   * participant on every @lakeburner turn.
+   * Return the stable ID for a turn and bump the record only if it is already
+   * an Active Fire. This lets non-start @lakeburner commands carry session
+   * metadata without turning ordinary participant usage into a fire.
+   */
+  public async noteTurn(firstPrompt: string, currentPrompt: string): Promise<string> {
+    const id = AffectedChats.fingerprint(firstPrompt || currentPrompt);
+    const all = this.readAll();
+    const existing = all[id];
+    if (!existing) return id;
+
+    existing.lastSeenIso = new Date().toISOString();
+    existing.turns += 1;
+    await this.context.globalState.update(STATE_KEY, all);
+    this.emitter.fire();
+    return id;
+  }
+
+  /**
+   * Register (or bump) an Active Fire and return its ID. Called from the chat
+   * participant start command and Start a Chat flows.
    */
   public async registerTurn(firstPrompt: string, currentPrompt: string): Promise<string> {
     const id = AffectedChats.fingerprint(firstPrompt || currentPrompt);
@@ -69,15 +82,7 @@ export class AffectedChats {
         lastSeenIso: now,
         turns: 1,
       };
-      this.logger.task({ fn: "registerTurn" }, "New Chat Session Tracked", { id, label: all[id].label });
-      if (this.getAutoAllow()) {
-        const set = new Set(this.listAllowedIds());
-        if (!set.has(id)) {
-          set.add(id);
-          await this.context.globalState.update(ALLOWLIST_KEY, Array.from(set));
-          this.logger.user({ fn: "registerTurn" }, "Auto-Allowlisted New Session", { id });
-        }
-      }
+      this.logger.task({ fn: "registerTurn" }, "New Active Fire Tracked", { id, label: all[id].label });
     }
     await this.context.globalState.update(STATE_KEY, all);
     this.emitter.fire();
@@ -90,82 +95,40 @@ export class AffectedChats {
    * promoted to Active Fires with the same reliability as Start a Chat.
    */
   public async igniteTurn(firstPrompt: string, currentPrompt: string): Promise<string> {
-    const id = await this.registerTurn(firstPrompt, currentPrompt);
-    await this.setAllowed(id, true);
-    return id;
+    return await this.registerTurn(firstPrompt, currentPrompt);
   }
 
-  /** Sessions within the configured window, newest-first. */
+  /** Active Fires, newest-first. */
   public list(): ChatSessionRecord[] {
-    const windowDays = this.getWindowDays();
-    const cutoff = Date.now() - windowDays * 86400000;
-    const all = this.readAll();
-    const kept: Record<string, ChatSessionRecord> = {};
-    const out: ChatSessionRecord[] = [];
-    for (const r of Object.values(all)) {
-      const t = Date.parse(r.lastSeenIso);
-      if (Number.isFinite(t) && t >= cutoff) {
-        kept[r.id] = r;
-        out.push(r);
-      }
-    }
-    if (Object.keys(kept).length !== Object.keys(all).length) {
-      void this.context.globalState.update(STATE_KEY, kept);
-    }
-    return out.sort((a, b) => Date.parse(b.lastSeenIso) - Date.parse(a.lastSeenIso));
+    return Object.values(this.readAll()).sort((a, b) => Date.parse(b.lastSeenIso) - Date.parse(a.lastSeenIso));
   }
 
-  public listAllowedIds(): string[] {
-    const raw = this.context.globalState.get<string[]>(ALLOWLIST_KEY, []);
-    return Array.isArray(raw) ? raw.filter((v) => typeof v === "string") : [];
+  public listActiveIds(): string[] {
+    return this.list().map((r) => r.id);
   }
 
-  public isAllowed(id: string): boolean {
-    return this.listAllowedIds().includes(id);
-  }
-
-  public async setAllowed(id: string, allowed: boolean): Promise<void> {
-    const set = new Set(this.listAllowedIds());
-    if (allowed) set.add(id);
-    else set.delete(id);
-    await this.context.globalState.update(ALLOWLIST_KEY, Array.from(set));
-    this.logger.user({ fn: "setAllowed" }, "Allowlist Updated", { id, allowed });
-    this.emitter.fire();
+  public hasActiveFires(): boolean {
+    return this.listActiveIds().length > 0;
   }
 
   /**
-   * Wipe the entire registry (sessions + allowlist + legacy arm key). Called
-   * on extension activation so each LakeBurner session starts from a clean
-   * slate — no chats are armed until the user explicitly arms one via Send
-   * Initial Prompt or `@lakeburner start`.
+   * Wipe the entire registry. Called on extension activation so each
+   * LakeBurner session starts from a clean slate: no chats are active until
+   * the user explicitly starts one via Send Initial Prompt or
+   * `@lakeburner start`.
    */
   public async clearAll(): Promise<void> {
     await this.context.globalState.update(STATE_KEY, undefined);
-    await this.context.globalState.update(ALLOWLIST_KEY, undefined);
-    await this.context.globalState.update(ARM_KEY, undefined);
+    await this.context.globalState.update(LEGACY_ALLOWLIST_KEY, undefined);
+    await this.context.globalState.update(LEGACY_ARM_KEY, undefined);
     await this.context.globalState.update(TARGET_KEY, undefined);
-    this.logger.task({ fn: "clearAll" }, "Affected Chats Reset");
+    this.logger.task({ fn: "clearAll" }, "Active Fires Reset");
     this.emitter.fire();
-  }
-
-  /**
-   * Auto-Run gate: true if any allow-listed session exists (and is still in
-   * the tracking window). Membership is the only signal — once a session is
-   * on the list, it stays armed for that window until it's explicitly removed
-   * via `@lakeburner stop`, the Clear button, or natural pruning.
-   */
-  public hasRecentAllowedActivity(_recentMs: number): boolean {
-    const allowed = new Set(this.listAllowedIds());
-    if (allowed.size === 0) return false;
-    for (const r of this.list()) {
-      if (allowed.has(r.id)) return true;
-    }
-    return false;
   }
 
   /**
    * Register a session derived from a known prompt (used by Send Initial
-   * Prompt — the chat participant doesn't run for those, so we register on
+   * Prompt; the chat participant does not run for those, so we register on
    * the dispatcher side using the prompt as the fingerprint seed). The
    * resulting session ID will collide with the one the chat participant
    * would compute if/when @lakeburner is later invoked in the same
@@ -186,69 +149,31 @@ export class AffectedChats {
         lastSeenIso: now,
         turns: 1,
       };
-      this.logger.task({ fn: "registerExternal" }, "External Chat Session Tracked", { id, label: all[id].label });
+      this.logger.task({ fn: "registerExternal" }, "External Active Fire Tracked", { id, label: all[id].label });
     }
     await this.context.globalState.update(STATE_KEY, all);
-    const set = new Set(this.listAllowedIds());
-    if (!set.has(id)) {
-      set.add(id);
-      await this.context.globalState.update(ALLOWLIST_KEY, Array.from(set));
-      this.logger.user({ fn: "registerExternal" }, "Allowlisted External Session", { id });
-    }
     this.emitter.fire();
     return id;
   }
 
-  /** Remove a session entirely — used by @lakeburner stop. */
+  /** Remove a single Active Fire. */
   public async removeSession(id: string): Promise<void> {
     const all = this.readAll();
     if (all[id]) {
       delete all[id];
       await this.context.globalState.update(STATE_KEY, all);
     }
-    const set = new Set(this.listAllowedIds());
-    if (set.has(id)) {
-      set.delete(id);
-      await this.context.globalState.update(ALLOWLIST_KEY, Array.from(set));
-    }
-    this.logger.user({ fn: "removeSession" }, "Session Removed", { id });
+    await this.removeLegacyAllowedId(id);
+    this.logger.user({ fn: "removeSession" }, "Active Fire Removed", { id });
     this.emitter.fire();
-  }
-
-  /**
-   * Manual arm: kept for back-compat callers but no longer used by the
-   * default Auto-Run flow. Allowlist membership is the gate now.
-   */
-  public async arm(durationMs: number, reason: string): Promise<void> {
-    const until = Date.now() + Math.max(0, durationMs);
-    await this.context.globalState.update(ARM_KEY, until);
-    this.logger.user({ fn: "arm" }, "Auto-Run Manually Armed (legacy)", { durationMs, reason });
-    this.emitter.fire();
-  }
-
-  public async disarm(reason: string): Promise<void> {
-    await this.context.globalState.update(ARM_KEY, 0);
-    this.logger.user({ fn: "disarm" }, "Auto-Run Manually Disarmed", { reason });
-    this.emitter.fire();
-  }
-
-  public isManuallyArmed(): boolean {
-    const until = this.context.globalState.get<number>(ARM_KEY, 0);
-    return typeof until === "number" && until > Date.now();
-  }
-
-  public armedUntilIso(): string | null {
-    const until = this.context.globalState.get<number>(ARM_KEY, 0);
-    if (!until || until <= Date.now()) return null;
-    return new Date(until).toISOString();
   }
 
   public async clear(): Promise<void> {
     await this.context.globalState.update(STATE_KEY, {});
-    await this.context.globalState.update(ALLOWLIST_KEY, []);
-    await this.context.globalState.update(ARM_KEY, 0);
+    await this.context.globalState.update(LEGACY_ALLOWLIST_KEY, []);
+    await this.context.globalState.update(LEGACY_ARM_KEY, 0);
     await this.context.globalState.update(TARGET_KEY, undefined);
-    this.logger.user({ fn: "clear" }, "Affected Chats Cleared");
+    this.logger.user({ fn: "clear" }, "Active Fires Cleared");
     this.emitter.fire();
   }
 
@@ -257,20 +182,15 @@ export class AffectedChats {
     return raw && typeof raw === "object" ? raw : {};
   }
 
-  private getWindowDays(): number {
-    const cfg = vscode.workspace.getConfiguration(this.cfgSection);
-    const v = cfg.get<number>("affectedChats.windowDays", 3);
-    return Number.isFinite(v) && v > 0 ? v : 3;
-  }
-
-  private getAutoAllow(): boolean {
-    const cfg = vscode.workspace.getConfiguration(this.cfgSection);
-    return cfg.get<boolean>("affectedChats.autoAllowNewSessions", true);
+  private async removeLegacyAllowedId(id: string): Promise<void> {
+    const raw = this.context.globalState.get<string[]>(LEGACY_ALLOWLIST_KEY, []);
+    if (!Array.isArray(raw) || !raw.includes(id)) return;
+    await this.context.globalState.update(LEGACY_ALLOWLIST_KEY, raw.filter((v) => v !== id));
   }
 
   /** The prompt-target selected in "Start a Chat". The Keep Going ticker
-   *  reads this instead of the `keepGoingTargetId` setting so the nudge
-   *  always goes to the same overlord the user picked in the sidebar. */
+   * reads this instead of a setting so the nudge always goes to the same
+   * overlord the user picked in the sidebar. */
   public getActiveTargetId(): string | undefined {
     return this.context.globalState.get<string>(TARGET_KEY);
   }
@@ -284,5 +204,5 @@ export class AffectedChats {
 function shortLabel(s: string): string {
   const trimmed = (s ?? "").trim().replace(/\s+/g, " ");
   if (trimmed.length <= 60) return trimmed || "(empty prompt)";
-  return trimmed.slice(0, 57) + "…";
+  return trimmed.slice(0, 57) + "...";
 }

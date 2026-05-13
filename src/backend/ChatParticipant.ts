@@ -60,7 +60,7 @@ export function registerLakeBurnerParticipant(
     const sessionId =
       command === "start"
         ? await affected.igniteTurn(firstPrompt, prompt)
-        : await affected.registerTurn(firstPrompt, prompt);
+        : await affected.noteTurn(firstPrompt, prompt);
 
     activity.add("REQUEST", `@lakeburner ${command ?? ""} ${prompt}`.trim(), {
       command,
@@ -194,7 +194,7 @@ async function handleAdvise(
     continuePrompt = input.trim();
   }
 
-  // Ensure this session is in the affected chats allowlist.
+  // The request already registered this conversation as an Active Fire.
   activity.add("REQUEST", `Continue: ${continuePrompt}`, { sessionId, length: continuePrompt.length });
 
   if (dispatcher) {
@@ -221,9 +221,9 @@ async function handleStart(
   autoRun: AutoRunMode,
   sessionId: string
 ): Promise<vscode.ChatResult> {
-  // `igniteTurn` already registered and allow-listed this conversation before
-  // we reached the command handler. Turning Auto-Run on here mirrors Start a
-  // Chat, but keeps the current chat as the active fire.
+  // `igniteTurn` already registered this conversation before we reached the
+  // command handler. Turning Auto-Run on here mirrors Start a Chat, but keeps
+  // the current chat as the active fire.
   await autoRun.setEnabled(true);
 
   stream.markdown(

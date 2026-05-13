@@ -40,11 +40,12 @@ type ChatSessionRecord = {
 
 type IncomingMessage =
   | { type: "lakeburner.providers"; providers: ProviderInfo[] }
+  | { type: "lakeburner.accounts"; accounts: { providerId: string; emails: string[] }[] }
   | { type: "lakeburner.activity"; entries: ActivityEntry[] }
   | { type: "lakeburner.autoRun"; enabled: boolean }
   | { type: "lakeburner.singletMode"; enabled: boolean }
   | { type: "lakeburner.prompt"; targets: PromptTarget[]; defaultPrompt: string }
-  | { type: "lakeburner.affectedChats"; sessions: ChatSessionRecord[]; allowedIds: string[] }
+  | { type: "lakeburner.affectedChats"; sessions: ChatSessionRecord[] }
   | { type: "lakeburner.error"; reason: string };
 
 type OutgoingMessage =
@@ -54,13 +55,15 @@ type OutgoingMessage =
   | { type: "prompt.send"; targetId: string; prompt: string }
   | { type: "prompt.saveDefault"; prompt: string }
   | { type: "affectedChats.remove"; id: string }
-  | { type: "affectedChats.clear" }
   | { type: "activity.clear" }
   | { type: "activity.copy" }
   | { type: "activity.popout" }
   | { type: "provider.switch"; id: string }
   | { type: "provider.login"; id: string }
   | { type: "settings.open" }
+  | { type: "accounts.add"; providerId: string }
+  | { type: "accounts.editPassword"; providerId: string; email: string }
+  | { type: "accounts.remove"; providerId: string; email: string }
   | {
       type: "lakeburner.hostlog";
       kind: "TASK" | "USER" | "INFO" | "WARN" | "ERROR";
@@ -98,7 +101,13 @@ function el<T extends HTMLElement>(id: string): T | null {
   return document.getElementById(id) as T | null;
 }
 
+/** Per-provider email lists, keyed by providerId. Updated by lakeburner.accounts. */
+let accountsByProvider: Record<string, string[]> = {};
+/** Last received providers list, used to re-render when accounts arrive. */
+let lastProviders: ProviderInfo[] = [];
+
 function renderProviders(providers: ProviderInfo[]): void {
+  lastProviders = providers;
   const root = el<HTMLDivElement>("provider-list");
   if (!root) return;
 
@@ -161,6 +170,59 @@ function renderProviders(providers: ProviderInfo[]): void {
     card.appendChild(actionBtn);
 
     root.appendChild(card);
+
+    // Account list for this provider
+    const emails = accountsByProvider[p.id] ?? [];
+    if (emails.length > 0 || p.installed) {
+      const accountsBox = document.createElement("div");
+      accountsBox.className = "account-list";
+
+      for (const email of emails) {
+        const row = document.createElement("div");
+        row.className = "account-row";
+
+        const emailSpan = document.createElement("span");
+        emailSpan.className = "account-email";
+        emailSpan.textContent = email;
+        emailSpan.title = email;
+        row.appendChild(emailSpan);
+
+        const editBtn = document.createElement("button");
+        editBtn.className = "account-action-btn";
+        editBtn.type = "button";
+        editBtn.title = "Edit password";
+        editBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M13.23 1h-1.46L3.52 9.25l-.16.22L1 13.59 2.41 15l4.12-2.36.22-.16L15 4.23V2.77L13.23 1zM2.41 13.59l1.51-3 1.45 1.45-2.96 1.55zm3.83-2.06L4.47 9.76l8-8 1.77 1.77-8 8z"/></svg>`;
+        editBtn.addEventListener("click", () => {
+          postMessageToHost({ type: "accounts.editPassword", providerId: p.id, email });
+        });
+        row.appendChild(editBtn);
+
+        const removeBtn = document.createElement("button");
+        removeBtn.className = "account-action-btn account-remove-btn";
+        removeBtn.type = "button";
+        removeBtn.title = "Remove account";
+        removeBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3h3v1h-1v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4H3V3h3V2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1zm-1 0V2H7v1h2zm-4 1v9h6V4H5zm2 2h1v5H7V6zm2 0h1v5H9V6z"/></svg>`;
+        removeBtn.addEventListener("click", () => {
+          postMessageToHost({ type: "accounts.remove", providerId: p.id, email });
+        });
+        row.appendChild(removeBtn);
+
+        accountsBox.appendChild(row);
+      }
+
+      if (p.installed) {
+        const addBtn = document.createElement("button");
+        addBtn.className = "account-add-btn";
+        addBtn.type = "button";
+        addBtn.textContent = "+ Add Account";
+        addBtn.addEventListener("click", () => {
+          postMessageToHost({ type: "accounts.add", providerId: p.id });
+        });
+        accountsBox.appendChild(addBtn);
+      }
+
+      root.appendChild(accountsBox);
+    }
   }
 }
 
@@ -335,7 +397,7 @@ function renderPrompt(targets: PromptTarget[], defaultPrompt: string): void {
   }
 }
 
-function renderAffectedChats(sessions: ChatSessionRecord[], _allowedIds: string[]): void {
+function renderAffectedChats(sessions: ChatSessionRecord[]): void {
   lastKnownSessions = sessions;
   const root = el<HTMLDivElement>("affected-chats");
   if (!root) {
@@ -387,7 +449,7 @@ function renderAffectedChats(sessions: ChatSessionRecord[], _allowedIds: string[
     const removeBtn = document.createElement("button");
     removeBtn.className = "chat-remove-btn";
     removeBtn.type = "button";
-    removeBtn.title = "Remove from tracking";
+    removeBtn.title = "Remove active fire";
     removeBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3h3v1h-1v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4H3V3h3V2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1zm-1 0V2H7v1h2zm-4 1v9h6V4H5zm2 2h1v5H7V6zm2 0h1v5H9V6z"/></svg>`;
     removeBtn.addEventListener("click", () => {
       postMessageToHost({ type: "affectedChats.remove", id: s.id });
@@ -431,14 +493,6 @@ function bindButtons(): void {
       e.stopPropagation();
       e.preventDefault();
       log.user("ui.activity.copy", "Activity Copy Clicked");
-      postMessageToHost({ type: "activity.copy" });
-    });
-  }
-
-  const copyInlineBtn = el<HTMLButtonElement>("copyActivityInlineBtn");
-  if (copyInlineBtn) {
-    copyInlineBtn.addEventListener("click", () => {
-      log.user("ui.activity.copy", "Activity Copy Inline Clicked");
       postMessageToHost({ type: "activity.copy" });
     });
   }
@@ -498,6 +552,15 @@ function handleIncoming(message: IncomingMessage): void {
     case "lakeburner.providers":
       renderProviders(message.providers ?? []);
       return;
+    case "lakeburner.accounts": {
+      accountsByProvider = {};
+      for (const entry of message.accounts ?? []) {
+        accountsByProvider[entry.providerId] = entry.emails;
+      }
+      // Re-render providers to update account lists
+      renderProviders(lastProviders);
+      return;
+    }
     case "lakeburner.activity":
       lastActivityEntries = message.entries ?? [];
       renderFilteredActivity();
@@ -512,7 +575,7 @@ function handleIncoming(message: IncomingMessage): void {
       renderPrompt(message.targets ?? [], message.defaultPrompt ?? "");
       return;
     case "lakeburner.affectedChats":
-      renderAffectedChats(message.sessions ?? [], message.allowedIds ?? []);
+      renderAffectedChats(message.sessions ?? []);
       updateActivitySessionFilter(message.sessions ?? []);
       return;
     case "lakeburner.error":

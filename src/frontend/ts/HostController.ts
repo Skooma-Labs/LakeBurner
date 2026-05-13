@@ -17,22 +17,25 @@ type IncomingFromWebview =
   | { type: "prompt.send"; targetId: string; prompt: string }
   | { type: "prompt.saveDefault"; prompt: string }
   | { type: "affectedChats.remove"; id: string }
-  | { type: "affectedChats.clear" }
   | { type: "activity.clear" }
   | { type: "activity.copy" }
   | { type: "activity.popout" }  | { type: "provider.switch"; id: string }
   | { type: "provider.login"; id: string }
   | { type: "settings.open" }
+  | { type: "accounts.add"; providerId: string }
+  | { type: "accounts.editPassword"; providerId: string; email: string }
+  | { type: "accounts.remove"; providerId: string; email: string }
   | HostLogEnvelope
   | { type: string; [key: string]: unknown };
 
 type OutgoingToWebview =
   | { type: "lakeburner.providers"; providers: ProviderInfo[] }
+  | { type: "lakeburner.accounts"; accounts: { providerId: string; emails: string[] }[] }
   | { type: "lakeburner.activity"; entries: ActivityEntry[] }
   | { type: "lakeburner.autoRun"; enabled: boolean }
   | { type: "lakeburner.singletMode"; enabled: boolean }
   | { type: "lakeburner.prompt"; targets: PromptTarget[]; defaultPrompt: string }
-  | { type: "lakeburner.affectedChats"; sessions: ChatSessionRecord[]; allowedIds: string[] }
+  | { type: "lakeburner.affectedChats"; sessions: ChatSessionRecord[] }
   | { type: "lakeburner.error"; reason: string };
 
 function readMessageType(value: unknown): string | undefined {
@@ -115,6 +118,7 @@ export class WebviewHost implements vscode.WebviewViewProvider {
           case "webview.ready": {
             this.logger.info({ fn: "onDidReceiveMessage" }, "Webview Loaded Successfully");
             this.broadcastProviders();
+            void this.broadcastAccounts();
             this.broadcastActivity();
             this.broadcastAutoRun();
             this.broadcastSingletMode();
@@ -125,6 +129,7 @@ export class WebviewHost implements vscode.WebviewViewProvider {
 
           case "autoRun.toggle": {
             const next = await this.autoRun.toggle();
+            if (!next) await this.affected.clear();
             this.activity.add(
               "INFO",
               next ? "Auto-Run enabled — assistants will be auto-approved" : "Auto-Run disabled — manual approvals required",
@@ -185,17 +190,16 @@ export class WebviewHost implements vscode.WebviewViewProvider {
               this.broadcastAffectedChats();
               return;
             }
-            // Dispatch first — only arm Auto-Run + Affected Chats on success.
+            // Dispatch first; only create an Active Fire on success.
             const result = await this.dispatcher.send(targetId, prompt);
             if (result.ok) {
               await this.autoRun.setEnabled(true);
-              // Register the dispatched chat in Affected Chats and add it to
-              // the allowlist. Fingerprint matches the one the chat participant
-              // would compute if @lakeburner is later invoked in the same
-              // conversation, so the entries collide cleanly.
+              // Fingerprint matches the one the chat participant would compute
+              // if @lakeburner is later invoked in the same conversation, so
+              // the entries collide cleanly.
               await this.affected.registerExternal(prompt);
               // Remember which overlord was selected so the Keep Going ticker
-              // nudges the same target instead of reading the legacy setting.
+              // nudges the same target.
               await this.affected.setActiveTargetId(targetId);
             } else {
               this.activity.add("BLOCK", `Start a Chat failed: ${result.reason ?? "dispatch returned not-ok"}`, { targetId });
@@ -220,11 +224,6 @@ export class WebviewHost implements vscode.WebviewViewProvider {
             return;
           }
 
-          case "affectedChats.clear": {
-            await this.affected.clear();
-            return;
-          }
-
           case "provider.switch": {
             const id = String((incoming as { id?: unknown }).id ?? "").trim();
             if (!id) return;
@@ -244,6 +243,29 @@ export class WebviewHost implements vscode.WebviewViewProvider {
           case "settings.open": {
             await vscode.commands.executeCommand("workbench.action.openSettings", `@ext:${this.context.extension.id}`);
             this.logger.user({ fn: "onDidReceiveMessage" }, "Settings Opened");
+            return;
+          }
+
+          case "accounts.add": {
+            const providerId = String((incoming as { providerId?: unknown }).providerId ?? "").trim();
+            if (!providerId) return;
+            await this.handleAddAccount(providerId);
+            return;
+          }
+
+          case "accounts.editPassword": {
+            const providerId = String((incoming as { providerId?: unknown }).providerId ?? "").trim();
+            const email = String((incoming as { email?: unknown }).email ?? "").trim();
+            if (!providerId || !email) return;
+            await this.handleEditPasswordDirect(providerId, email);
+            return;
+          }
+
+          case "accounts.remove": {
+            const providerId = String((incoming as { providerId?: unknown }).providerId ?? "").trim();
+            const email = String((incoming as { email?: unknown }).email ?? "").trim();
+            if (!providerId || !email) return;
+            await this.handleRemoveAccountDirect(providerId, email);
             return;
           }
 
@@ -293,8 +315,23 @@ export class WebviewHost implements vscode.WebviewViewProvider {
     void this.postMessageToWebview({
       type: "lakeburner.affectedChats",
       sessions: this.affected.list(),
-      allowedIds: this.affected.listAllowedIds(),
     });
+  }
+
+  public async broadcastAccounts(): Promise<void> {
+    const providers = this.monitor.list();
+    const accounts: { providerId: string; emails: string[] }[] = [];
+    for (const p of providers) {
+      const secretKey = `lakeburner.accounts.${p.id}`;
+      const raw = await this.context.secrets.get(secretKey);
+      let parsed: { email: string }[] = [];
+      try {
+        parsed = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(parsed)) parsed = [];
+      } catch { parsed = []; }
+      accounts.push({ providerId: p.id, emails: parsed.map((a) => a.email) });
+    }
+    void this.postMessageToWebview({ type: "lakeburner.accounts", accounts });
   }
 
   public async manageAccounts(): Promise<void> {
@@ -397,6 +434,7 @@ export class WebviewHost implements vscode.WebviewViewProvider {
     this.activity.add("INFO", `Switched to ${selectedEmail} for ${providerLabel}`, { providerId, email: selectedEmail });
     vscode.window.showInformationMessage(`LakeBurner: Switched to ${selectedEmail} for ${providerLabel}`);
     this.logger.user({ fn: "handleSwitchUser" }, "User Switched", { providerId, email: selectedEmail });
+    void this.broadcastAccounts();
   }
 
   private async handleEditPassword(
@@ -425,6 +463,7 @@ export class WebviewHost implements vscode.WebviewViewProvider {
     await this.context.secrets.store(secretKey, JSON.stringify(accounts));
     this.logger.user({ fn: "handleEditPassword" }, "Password Updated", { email: pick.label });
     vscode.window.showInformationMessage(`LakeBurner: Password updated for ${pick.label}`);
+    void this.broadcastAccounts();
   }
 
   private async handleRemoveAccount(
@@ -442,6 +481,82 @@ export class WebviewHost implements vscode.WebviewViewProvider {
     await this.context.secrets.store(secretKey, JSON.stringify(updated));
     this.logger.user({ fn: "handleRemoveAccount" }, "Account Removed", { email: pick.label });
     vscode.window.showInformationMessage(`LakeBurner: Removed ${pick.label}`);
+    void this.broadcastAccounts();
+  }
+
+  private async handleAddAccount(providerId: string): Promise<void> {
+    const secretKey = `lakeburner.accounts.${providerId}`;
+    const raw = await this.context.secrets.get(secretKey);
+    let accounts: { email: string; password: string }[] = [];
+    try { accounts = raw ? JSON.parse(raw) : []; if (!Array.isArray(accounts)) accounts = []; } catch { accounts = []; }
+
+    const providers = this.monitor.list();
+    const providerLabel = providers.find((p) => p.id === providerId)?.label ?? providerId;
+
+    const email = await vscode.window.showInputBox({
+      title: `LakeBurner: Add Account — ${providerLabel}`,
+      prompt: "Enter your email address",
+      placeHolder: "user@example.com",
+      ignoreFocusOut: true,
+      validateInput: (v) => (v.includes("@") ? null : "Please enter a valid email"),
+    });
+    if (!email) return;
+
+    const password = await vscode.window.showInputBox({
+      title: `LakeBurner: Add Account — ${providerLabel}`,
+      prompt: "Enter your password",
+      password: true,
+      ignoreFocusOut: true,
+    });
+    if (!password) return;
+
+    const existing = accounts.find((a) => a.email === email);
+    if (existing) {
+      existing.password = password;
+    } else {
+      accounts.push({ email, password });
+    }
+    await this.context.secrets.store(secretKey, JSON.stringify(accounts));
+    this.logger.user({ fn: "handleAddAccount" }, "Account Added", { providerId, email });
+    vscode.window.showInformationMessage(`LakeBurner: Added ${email} for ${providerLabel}`);
+    void this.broadcastAccounts();
+  }
+
+  private async handleEditPasswordDirect(providerId: string, email: string): Promise<void> {
+    const secretKey = `lakeburner.accounts.${providerId}`;
+    const raw = await this.context.secrets.get(secretKey);
+    let accounts: { email: string; password: string }[] = [];
+    try { accounts = raw ? JSON.parse(raw) : []; if (!Array.isArray(accounts)) accounts = []; } catch { accounts = []; }
+
+    const account = accounts.find((a) => a.email === email);
+    if (!account) return;
+
+    const password = await vscode.window.showInputBox({
+      title: `LakeBurner: Edit Password — ${email}`,
+      prompt: "Enter the new password",
+      password: true,
+      ignoreFocusOut: true,
+    });
+    if (!password) return;
+
+    account.password = password;
+    await this.context.secrets.store(secretKey, JSON.stringify(accounts));
+    this.logger.user({ fn: "handleEditPasswordDirect" }, "Password Updated", { providerId, email });
+    vscode.window.showInformationMessage(`LakeBurner: Password updated for ${email}`);
+    void this.broadcastAccounts();
+  }
+
+  private async handleRemoveAccountDirect(providerId: string, email: string): Promise<void> {
+    const secretKey = `lakeburner.accounts.${providerId}`;
+    const raw = await this.context.secrets.get(secretKey);
+    let accounts: { email: string; password: string }[] = [];
+    try { accounts = raw ? JSON.parse(raw) : []; if (!Array.isArray(accounts)) accounts = []; } catch { accounts = []; }
+
+    const updated = accounts.filter((a) => a.email !== email);
+    await this.context.secrets.store(secretKey, JSON.stringify(updated));
+    this.logger.user({ fn: "handleRemoveAccountDirect" }, "Account Removed", { providerId, email });
+    vscode.window.showInformationMessage(`LakeBurner: Removed ${email}`);
+    void this.broadcastAccounts();
   }
 
   private getWebviewHtml(webview: vscode.Webview, nonce: string): string {
@@ -497,7 +612,6 @@ export class WebviewHost implements vscode.WebviewViewProvider {
     <div class="stack">
       <select id="activitySessionFilter" class="select" aria-label="Filter by session"></select>
       <div id="activity-log" class="activity-log" aria-live="polite"></div>
-      <button id="copyActivityInlineBtn" class="btn btn-block btn-secondary" type="button">Copy to Clipboard</button>
     </div>
   </details>
 

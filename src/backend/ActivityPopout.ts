@@ -58,6 +58,23 @@ export class ActivityPopout implements vscode.Disposable {
       async (msg: { type?: string }) => {
         if (msg?.type === "ready") postAll();
         if (msg?.type === "clear") this.activity.clear();
+        if (msg?.type === "copy") {
+          const text = this.activity
+            .list()
+            .slice()
+            .sort((a, b) => b.id - a.id)
+            .map((e) => {
+              const t = e.tsIso.slice(11, 19);
+              const head = `[${t}] ${e.kind} ${e.message}`;
+              if (e.data === undefined || e.data === null) return head;
+              let body: string;
+              try { body = JSON.stringify(e.data, null, 2); } catch { body = String(e.data); }
+              return `${head}\n  data: ${body.replace(/\n/g, "\n  ")}`;
+            })
+            .join("\n");
+          await vscode.env.clipboard.writeText(text);
+          this.activity.add("INFO", `Activity log copied to clipboard (${this.activity.list().length} entries)`);
+        }
       },
       undefined,
       this.subscriptions
@@ -201,6 +218,7 @@ export class ActivityPopout implements vscode.Disposable {
       </select>
     </label>
     <label><input type="checkbox" id="autoscroll" checked /> Auto-scroll</label>
+    <button id="copy" type="button" title="Copy activity to clipboard">Copy</button>
     <button id="clear" type="button" title="Clear all activity entries">Clear</button>
   </header>
   <div id="list"></div>
@@ -212,6 +230,7 @@ export class ActivityPopout implements vscode.Disposable {
       const autoscrollEl = document.getElementById('autoscroll');
       const sessionFilterEl = document.getElementById('sessionFilter');
       document.getElementById('clear').addEventListener('click', () => vscode.postMessage({ type: 'clear' }));
+      document.getElementById('copy').addEventListener('click', () => vscode.postMessage({ type: 'copy' }));
 
       function escape(s) {
         return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));

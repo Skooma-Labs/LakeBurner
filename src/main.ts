@@ -16,21 +16,19 @@ import { LocalCommandListener } from "./backend/LocalCommandListener";
 
 const CFG_SECTION = "lakeburner";
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
   const logger = Logger.create(context, "LakeBurner", CFG_SECTION, "main.ts");
   logger.info({ fn: "activate" }, "Extension Activation Started", { debugLevel: logger.getLevel() });
 
   const activity = new ActivityLog(logger);
   const monitor = new ProviderMonitor(logger, CFG_SECTION);
   const autoRun = new AutoRunMode(context, logger);
-  const affected = new AffectedChats(context, CFG_SECTION, logger);
-  // Reset the Affected Chats registry on every activation so each LakeBurner
-  // session starts cold — no chats are armed until the user explicitly arms
-  // one (Start a Chat or @lakeburner start). Fire-and-forget; the
-  // globalState write is fast and not awaited by anything below.
-  void affected.clearAll().then(() => {
-    activity.add("INFO", "Affected Chats reset for new session");
-  });
+  const affected = new AffectedChats(context, logger);
+  // Reset the Active Fires registry on every activation so each LakeBurner
+  // session starts cold; no chats are active until the user explicitly starts
+  // one (Start a Chat or @lakeburner start).
+  await affected.clearAll();
+  activity.add("INFO", "Active Fires reset for new session");
   const uia = new UIAAutoClicker(CFG_SECTION, logger, activity);
   const autoClicker = new AutoClicker(CFG_SECTION, logger, activity, context, uia);
   const dispatcher = new PromptDispatcher(CFG_SECTION, logger, activity);
@@ -62,6 +60,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand("lakeburner.autoRun.toggle", async () => {
       const next = await autoRun.toggle();
+      if (!next) await affected.clear();
       vscode.window.showInformationMessage(`LakeBurner Auto-Run is now ${next ? "ON" : "OFF"}.`);
     }),
     vscode.commands.registerCommand("lakeburner.activity.popout", () => popout.open()),
@@ -86,9 +85,14 @@ export function activate(context: vscode.ExtensionContext) {
         })) ?? "";
       }
       if (!prompt.trim()) return;
-      await autoRun.setEnabled(true);
-      await affected.registerExternal(prompt);
-      await dispatcher.send(targetId, prompt);
+      const result = await dispatcher.send(targetId, prompt);
+      if (result.ok) {
+        await autoRun.setEnabled(true);
+        await affected.registerExternal(prompt);
+        await affected.setActiveTargetId(targetId);
+      } else {
+        vscode.window.showWarningMessage(`LakeBurner: failed to start chat. ${result.reason ?? "Dispatch returned not-ok."}`);
+      }
     })
   );
 

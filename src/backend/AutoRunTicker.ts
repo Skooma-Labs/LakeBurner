@@ -48,9 +48,8 @@ export class AutoRunTicker implements vscode.Disposable {
   public start(context: vscode.ExtensionContext): void {
     this.refresh();
     context.subscriptions.push(this.autoRun.onChange(() => this.refresh()));
-    // Refresh whenever the allowlist changes — we only want the timer running
-    // while at least one chat is armed. This makes the ticker effectively
-    // per-session: arming a chat starts polling, removing the last one stops it.
+    // Refresh whenever Active Fires change. The timer only runs while at
+    // least one chat is active.
     context.subscriptions.push(this.affected.onChange(() => this.refresh()));
     context.subscriptions.push(
       vscode.workspace.onDidChangeConfiguration((e) => {
@@ -72,8 +71,8 @@ export class AutoRunTicker implements vscode.Disposable {
     const interval = cfg.get<number>("autoRun.tickIntervalMs", 0);
     this.activity.add(
       "INFO",
-      `Ticker started @ every ${interval}ms (armed chats: ${this.affected.listAllowedIds().length})`,
-      { intervalMs: interval, allowedCount: this.affected.listAllowedIds().length }
+      `Ticker started @ every ${interval}ms (active fires: ${this.affected.listActiveIds().length})`,
+      { intervalMs: interval, activeFireCount: this.affected.listActiveIds().length }
     );
     this.logger.task({ fn: "refresh" }, "Auto-Run Ticker Started", { intervalMs: interval });
     // Reset the stall clock — we don't want a "Keep going" to fire the moment
@@ -89,7 +88,7 @@ export class AutoRunTicker implements vscode.Disposable {
    * The ticker should only have a live timer when ALL of the following hold:
    *   - Auto-Run is ON
    *   - tickIntervalMs > 0
-   *   - At least one chat is on the allowlist
+   *   - At least one Active Fire exists
    *
    * The window-focus guard is intentionally NOT checked here — focus changes
    * are too frequent to start/stop the timer on, so we honor it inside tick()
@@ -100,7 +99,7 @@ export class AutoRunTicker implements vscode.Disposable {
     const cfg = vscode.workspace.getConfiguration(this.cfgSection);
     const interval = cfg.get<number>("autoRun.tickIntervalMs", 0);
     if (!Number.isFinite(interval) || interval <= 0) return false;
-    if (this.affected.listAllowedIds().length === 0) return false;
+    if (!this.affected.hasActiveFires()) return false;
     return true;
   }
 
@@ -108,7 +107,7 @@ export class AutoRunTicker implements vscode.Disposable {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
-      this.activity.add("INFO", "Ticker stopped (no armed chats, Auto-Run off, or interval=0)");
+      this.activity.add("INFO", "Ticker stopped (no active fires, Auto-Run off, or interval=0)");
       this.logger.info({ fn: "stop" }, "Auto-Run Ticker Stopped");
     }
   }
@@ -130,7 +129,7 @@ export class AutoRunTicker implements vscode.Disposable {
       return;
     }
     // Re-check the start guard cheaply — handles the race where Auto-Run was
-    // turned off or the allowlist emptied between intervals.
+    // turned off or Active Fires were cleared between intervals.
     if (!this.shouldRun()) {
       this.stop();
       return;
@@ -273,9 +272,7 @@ export class AutoRunTicker implements vscode.Disposable {
 
     const text = (cfg.get<string>("autoRun.keepGoingPrompt", "") || "").trim()
       || "Keep going. I trust your intuitions.\n\nIf the task is complete, find ways to improve what we've done in either quantity or quality. Our goal is endless generation with asymtotal diminishing returns. This verifies we reach a state where 'there is no more to be added' and 'the data quality cannot reliably through a variety of sources contemporary to the current year as it is in a state of maximum trustoworthiness'";
-    const targetId = this.affected.getActiveTargetId()
-      || (cfg.get<string>("autoRun.keepGoingTargetId", "") || "").trim()
-      || "copilot";
+    const targetId = this.affected.getActiveTargetId() || "copilot";
 
     if (!this.shouldRun()) return;
 

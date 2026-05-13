@@ -131,12 +131,13 @@ export class LocalCommandListener {
 
   private async dispatchStartChat(targetId: string, prompt: string): Promise<string> {
     try {
-      await this.autoRun.setEnabled(true);
-      await this.affected.registerExternal(prompt);
       const result = await this.dispatcher.send(targetId, prompt);
       if (!result.ok) {
         return `ERROR: ${result.reason ?? `Failed to dispatch to ${result.target.label}`}`;
       }
+      await this.autoRun.setEnabled(true);
+      await this.affected.registerExternal(prompt);
+      await this.affected.setActiveTargetId(targetId);
       return "OK: Prompt dispatched";
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

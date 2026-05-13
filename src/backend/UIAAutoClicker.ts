@@ -131,9 +131,7 @@ export class UIAAutoClicker {
   ];
 
   public isEnabled(): boolean {
-    if (process.platform !== "win32") return false;
-    const cfg = vscode.workspace.getConfiguration(this.cfgSection);
-    return cfg.get<boolean>("uia.enabled", true);
+    return process.platform === "win32";
   }
 
   public async pressAllow(opts: { silent?: boolean } = {}): Promise<string | null> {
@@ -218,7 +216,7 @@ export class UIAAutoClicker {
   ): Promise<string | null> {
     if (!this.isEnabled()) {
       if (!opts.silent) {
-        this.activity.add("INFO", `UIA disabled (platform=${process.platform}, uia.enabled=false?)`, { strategy: "uia", intent });
+        this.activity.add("INFO", `UIA unavailable (platform=${process.platform})`, { strategy: "uia", intent });
       }
       return null;
     }

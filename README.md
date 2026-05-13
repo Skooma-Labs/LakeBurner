@@ -77,7 +77,7 @@ Custom dispatch targets are intentionally kept out of the Settings UI; LakeBurne
 
 ### Active Fires
 
-Active Fires are chat sessions LakeBurner is allowed to operate on. The ticker only runs when Auto-Run is on and at least one Active Fire is allow-listed.
+Active Fires are chat sessions LakeBurner is operating on. The ticker only runs when Auto-Run is on and at least one Active Fire exists.
 
 Sessions are tracked by a stable hash of the conversation's first prompt because VS Code's stable chat API does not expose a durable session ID.
 
@@ -91,7 +91,7 @@ Ways to remove fires:
 - Use the trash button in the Active Fires list.
 - Type `@lakeburner stop` to extinguish all fires and turn Auto-Run off.
 
-The registry is reset on extension activation so a new VS Code session starts cold.
+The registry is reset on extension activation and cleared whenever Auto-Run is extinguished, so a new VS Code session starts cold.
 
 ### Activity
 
@@ -162,7 +162,7 @@ The ticker is controlled by `lakeburner.autoRun.tickIntervalMs`. It runs only wh
 
 - Auto-Run is on
 - `tickIntervalMs` is greater than zero
-- at least one Active Fire is allow-listed
+- at least one Active Fire exists
 
 Each tick:
 
@@ -179,10 +179,10 @@ The nudge path is deliberately conservative. LakeBurner will not queue a nudge o
 LakeBurner has three button-press strategies:
 
 1. **UI Automation**: preferred, Windows-only, scans VS Code windows for accessible button names and invokes them without moving focus or the mouse.
-2. **VS Code commands**: configurable command IDs for Keep/Allow actions.
-3. **Coordinate fallback**: optional Windows mouse click at a calibrated position. This is off by default and brittle by design.
+2. **VS Code commands**: internal command IDs for Keep/Allow actions.
+3. **Coordinate fallback**: Windows mouse click at a calibrated position, used only when calibration exists.
 
-The Auto-Run ticker uses UIA-only pressing so it does not steal focus or move the cursor. Manual helper paths can use the command and coordinate fallbacks when configured.
+The Auto-Run ticker uses UIA-only pressing so it does not steal focus or move the cursor. Manual helper paths can use the command and coordinate fallbacks silently when they are available.
 
 ## Logging and Diagnostics
 
@@ -233,23 +233,6 @@ This is optional under-the-hood observability support. LakeBurner does not depen
 - `lakeburner.autoRun.keepGoingAfterIdleMs`: required quiet time before nudging. Default `15000`.
 - `lakeburner.autoRun.keepGoingIdleStreak`: number of consecutive idle confirmations. Default `3`.
 - `lakeburner.autoRun.keepGoingPrompt`: text sent when a chat is idle.
-- `lakeburner.autoRun.keepGoingTargetId`: prompt target for nudges. Default `copilot`.
-
-### Active Fires
-
-- `lakeburner.affectedChats.windowDays`: how long tracked sessions stay visible. Default `3`.
-- `lakeburner.affectedChats.autoAllowNewSessions`: auto-allow new `@lakeburner` sessions. Default `true`.
-
-### UI Automation
-
-- `lakeburner.uia.enabled`: enable Windows UI Automation. Default `true`.
-
-### Command and Coordinate Fallbacks
-
-- `lakeburner.autoClick.preferCommand`: try commands before UIA in non-ticker flows.
-- `lakeburner.autoClick.fallbackEnabled`: enable coordinate fallback. Default `false`.
-- `lakeburner.autoClick.fallbackPosition`: captured Keep click position.
-- `lakeburner.autoApprove.fallbackPosition`: captured Allow click position.
 
 ### Prompt Dispatch
 
@@ -285,7 +268,7 @@ npm run vscode:prepublish
 src/main.ts                         extension activation and wiring
 src/backend/ActivityLog.ts          in-app activity buffer and Output correlation
 src/backend/ActivityPopout.ts       popout Activity webview
-src/backend/AffectedChats.ts        Active Fires registry and allowlist
+src/backend/AffectedChats.ts        Active Fires registry
 src/backend/AutoClicker.ts          command/UIA/coordinate button press pipeline
 src/backend/AutoRunMode.ts          global Auto-Run state
 src/backend/AutoRunTicker.ts        Allow/Keep polling and idle nudge dispatch
@@ -306,7 +289,7 @@ resources/                         extension icons
 - LakeBurner does not enable or export Copilot OpenTelemetry.
 - Copilot OTel content capture is only reported when you enable it through Copilot settings or environment variables.
 - UIA scans are restricted to configured VS Code process names.
-- Coordinate fallback is opt-in and should be used only when UIA/commands are insufficient.
+- Coordinate fallback only runs after UIA/commands miss and a calibrated position exists.
 - In-app Activity is in-memory and capped. Session metadata is kept in VS Code extension global state and reset on activation.
 
 ## Known Limitations
