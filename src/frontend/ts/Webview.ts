@@ -143,7 +143,7 @@ function renderProviders(providers: ProviderInfo[]): void {
     actionBtn.type = "button";
     if (p.installed) {
       actionBtn.textContent = "Switch User";
-      actionBtn.title = `Switch user for ${p.label}`;
+      actionBtn.title = `Switch to ${p.label}`;
       actionBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         postMessageToHost({ type: "provider.switch", id: p.id });
