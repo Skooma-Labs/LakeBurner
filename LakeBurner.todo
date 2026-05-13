@@ -1,14 +1,24 @@
 LakeBurner 1.0.0 TODO
 
 Feature - Start a Chat:
-☐ Singlet Mode Enable/Disable (Allows the conversation to end upon the first task completion. This mode makes it so that LakeBurner never sends the nudge-prompt)
+☐ Auto-Run related Legacy Settings should be built into the 'Start a Chat' feature or adjusted:
+    ☐ Nudge-Prompt Target is currently Single-Overlord. This should not be a setting but instead attached to the Start a Chat Overlord Dropdown selection.
+✔ Singlet Mode Enable/Disable (Allows the conversation to end upon the first task completion. This mode makes it so that LakeBurner never sends the nudge-prompt) @done(26-05-13 14:47)
 
 Feature - Overlords:
-☐ The 'Switch' button label should be adjusted to 'Switch User'
-☐ Functionality is operational. 
-    ☐ 'Switch User' should allow the User to provide Email+Pass for the specified Overlord to login.
-    ☐ VSCode secure key vault/store should may potentially be utilized to store multiple accounts for each Overlord
-    ☐ If multiple accounts are stored for an overlord, 'Switch User' should provide an Account selection dropdown for each account and an entry for 'Connect another account'
+☐ 'Switch User' account storage feature should have an Account Manager built into the settings.
+✔ The 'Switch' button label should be adjusted to 'Switch User' @done(26-05-13 14:46)
+✔ Functionality is operational. @done(26-05-13 14:46)
+    ✔ 'Switch User' should allow the User to provide Email+Pass for the specified Overlord to login. @done(26-05-13 14:46)
+    ✔ VSCode secure key vault/store should may potentially be utilized to store multiple accounts for each Overlord @done(26-05-13 14:46)
+    ✔ If multiple accounts are stored for an overlord, 'Switch User' should provide an Account selection dropdown for each account and an entry for 'Connect another account' @done(26-05-13 14:46)
+
+Feature - Activity:
+    ☐ Activity Box should be able to drag to grow/reduce height
+    ☐ Sessions Dropdown should not be flush against the Activity Box, keep spacing equal to the distance between the 'Start a Chat' Overlord Dropdown and Prompt Box
+    Activity Log:
+        ☐ 'Newest First' Checkbox should be removed. Just default to 'Newest First' always.
+        ☐ Copy-to-Clipboard should also exist in the Activity Log window in addition to the TaskBar it's currently on.
 
 Bug - Start a Chat:
-☐ 'Running' State should be fixed so that in no circumstance the 'Running....' state is stuck 'Running....' when the conversation is not running. (E.g. In the event of an error, auth not taken care of but chat attempted, etc)
+✔ 'Running' State should be fixed so that in no circumstance the 'Running....' state is stuck 'Running....' when the conversation is not running. (E.g. In the event of an error, auth not taken care of but chat attempted, etc) @done(26-05-13 14:46)
