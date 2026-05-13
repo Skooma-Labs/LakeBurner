@@ -10,6 +10,7 @@ Bug - Start a Chat:
     ✔ 'Running' State should be fixed so that in no circumstance the 'Running....' state is stuck 'Running....' when the conversation is not running. (E.g. In the event of an error, auth not taken care of but chat attempted, etc) @done(26-05-13 14:46)
 
 Feature - Overlords:
+    ☐ Account Management is fully relegated to the LakeBurner Extension Settings instead of existing below the connection-status indicators.
     ✔ 'Switch User' account storage feature should have an Account Managing Add/Edit/Remove List Box built into the settings. @done(26-05-13 15:33)
     ✔ The 'Switch' button label should be adjusted to 'Switch User' @done(26-05-13 14:46)
     ✔ Functionality is operational. @done(26-05-13 14:46)
