@@ -1,7 +1,7 @@
 LakeBurner 1.0.0 TODO
 
 Feature - Start a Chat:
-    ☐ Next to the Singlet Checkbox, provide a checkbox for 'Active File', which will send and include the full line-by-line contents of the file which is actively open  (e.g. Todo file is open). Anything typed into the Prompt Box may be appended to the very end of the prompt after the Active File contents.
+    ✔ Next to the Singlet Checkbox, provide a checkbox for 'Active File', which will send and include the full line-by-line contents of the file which is actively open  (e.g. Todo file is open). Anything typed into the Prompt Box may be appended to the very end of the prompt after the Active File contents. @done(26-05-13 16:58)
     ✔ Uia: Enabled setting should be removed. This should be a built-in part of LakeBurner as part of its definitive purpose. This should always be enabled and therefore a setting is unnecessary. @done(26-05-13 15:40)
     ✔ Auto-Run related Legacy Settings should be built into the 'Start a Chat' feature or adjusted: @done(26-05-13 15:13)
         ✔ Nudge-Prompt Target is currently Single-Overlord. This should not be a setting but instead attached to the Start a Chat Overlord Dropdown selection. @done(26-05-13 15:13)
@@ -11,7 +11,8 @@ Bug - Start a Chat:
     ✔ 'Running' State should be fixed so that in no circumstance the 'Running....' state is stuck 'Running....' when the conversation is not running. (E.g. In the event of an error, auth not taken care of but chat attempted, etc) @done(26-05-13 14:46)
 
 Feature - Overlords:
-    ☐ Account Management is fully relegated to the LakeBurner Extension Settings instead of existing below the connection-status indicators.
+    ☐ Account Management within Settings improved UX so the settings.json isn't directly edited
+    ✔ Account Management is fully relegated to the LakeBurner Extension Settings instead of existing below the connection-status indicators. @done(26-05-13 16:58)
     ✔ 'Switch User' account storage feature should have an Account Managing Add/Edit/Remove List Box built into the settings. @done(26-05-13 15:33)
     ✔ The 'Switch' button label should be adjusted to 'Switch User' @done(26-05-13 14:46)
     ✔ Functionality is operational. @done(26-05-13 14:46)
