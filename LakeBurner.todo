@@ -1,6 +1,7 @@
 LakeBurner 1.0.0 TODO
 
 Feature - Start a Chat:
+    ☐ Next to the Singlet Checkbox, provide a checkbox for 'Active File', which will send and include the full line-by-line contents of the file which is actively open  (e.g. Todo file is open). Anything typed into the Prompt Box may be appended to the very end of the prompt after the Active File contents.
     ✔ Uia: Enabled setting should be removed. This should be a built-in part of LakeBurner as part of its definitive purpose. This should always be enabled and therefore a setting is unnecessary. @done(26-05-13 15:40)
     ✔ Auto-Run related Legacy Settings should be built into the 'Start a Chat' feature or adjusted: @done(26-05-13 15:13)
         ✔ Nudge-Prompt Target is currently Single-Overlord. This should not be a setting but instead attached to the Start a Chat Overlord Dropdown selection. @done(26-05-13 15:13)
