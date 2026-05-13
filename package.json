@@ -185,6 +185,52 @@
         }
       },
       {
+        "title": "Overlords",
+        "properties": {
+          "lakeburner.providers": {
+            "type": "array",
+            "default": [
+              {
+                "id": "GitHub.copilot-chat",
+                "label": "GitHub Copilot"
+              },
+              {
+                "id": "anthropic.claude-code",
+                "label": "Claude Code"
+              },
+              {
+                "id": "openai.chatgpt",
+                "label": "OpenAI Codex"
+              }
+            ],
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "markdownDescription": "Provider extensions shown in the LakeBurner **Overlords** status panel. Stored account credentials are managed with the command [`LakeBurner: Manage Overlord Accounts`](command:lakeburner.manageAccounts).",
+            "scope": "application"
+          }
+        }
+      },
+      {
         "title": "Start a Chat",
         "properties": {
           "lakeburner.initialPrompt.default": {

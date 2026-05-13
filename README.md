@@ -64,6 +64,8 @@ code --install-extension ./lakeburner-0.8.6.vsix
 
 Select a target provider and enter a prompt. LakeBurner registers the prompt as an Active Fire, turns Auto-Run on, and dispatches the prompt through the configured target.
 
+When **Active File** is checked, LakeBurner prepends the full line-numbered contents of the active editor to the Start a Chat prompt. Text in the prompt box is appended after the active file contents.
+
 Sample Chat:
 "Please create a CSV of various foods and information about them. Set that CSV in `C:\Users\5798017\Downloads` and name it "Cornucopia.csv". If one already exists, scan its contents and improve on it logically, qualitatively, or quantitvely."
 
@@ -112,6 +114,8 @@ The Overlords panel shows provider extension status for:
 - OpenAI Codex / ChatGPT
 
 OpenTelemetry awareness stays internal. LakeBurner does not enable Copilot telemetry, collect telemetry, send telemetry itself, or display OTel state in the extension UI.
+
+Stored Overlord accounts are managed from LakeBurner extension settings with `LakeBurner: Manage Overlord Accounts`; the sidebar Overlords panel only shows provider status and install access.
 
 ## Chat Participant Commands
 
@@ -238,6 +242,10 @@ This is optional under-the-hood observability support. LakeBurner does not depen
 
 - `lakeburner.initialPrompt.default`: default text for Start a Chat.
 
+### Overlords
+
+- `lakeburner.providers`: provider extensions shown in the Overlords status panel. Account credentials are stored in VS Code SecretStorage and managed by `LakeBurner: Manage Overlord Accounts`.
+
 ### Local Command Injection
 
 - `lakeburner.localCommandInjection.enabled`: listen on localhost for trusted local app commands. Default `true`.
@@ -250,6 +258,7 @@ Command palette commands:
 - `LakeBurner: Toggle Auto-Run`
 - `LakeBurner: Open Activity Popout`
 - `LakeBurner: Start a Chat`
+- `LakeBurner: Manage Overlord Accounts`
 
 Package commands:
 

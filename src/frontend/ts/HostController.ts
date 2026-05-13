@@ -14,23 +14,19 @@ type IncomingFromWebview =
   | { type: "webview.ready" }
   | { type: "autoRun.toggle" }
   | { type: "singletMode.toggle" }
-  | { type: "prompt.send"; targetId: string; prompt: string }
+  | { type: "prompt.send"; targetId: string; prompt: string; includeActiveFile?: boolean }
   | { type: "prompt.saveDefault"; prompt: string }
   | { type: "affectedChats.remove"; id: string }
   | { type: "activity.clear" }
   | { type: "activity.copy" }
-  | { type: "activity.popout" }  | { type: "provider.switch"; id: string }
+  | { type: "activity.popout" }
   | { type: "provider.login"; id: string }
   | { type: "settings.open" }
-  | { type: "accounts.add"; providerId: string }
-  | { type: "accounts.editPassword"; providerId: string; email: string }
-  | { type: "accounts.remove"; providerId: string; email: string }
   | HostLogEnvelope
   | { type: string; [key: string]: unknown };
 
 type OutgoingToWebview =
   | { type: "lakeburner.providers"; providers: ProviderInfo[] }
-  | { type: "lakeburner.accounts"; accounts: { providerId: string; emails: string[] }[] }
   | { type: "lakeburner.activity"; entries: ActivityEntry[] }
   | { type: "lakeburner.autoRun"; enabled: boolean }
   | { type: "lakeburner.singletMode"; enabled: boolean }
@@ -118,7 +114,6 @@ export class WebviewHost implements vscode.WebviewViewProvider {
           case "webview.ready": {
             this.logger.info({ fn: "onDidReceiveMessage" }, "Webview Loaded Successfully");
             this.broadcastProviders();
-            void this.broadcastAccounts();
             this.broadcastActivity();
             this.broadcastAutoRun();
             this.broadcastSingletMode();
@@ -182,7 +177,14 @@ export class WebviewHost implements vscode.WebviewViewProvider {
 
           case "prompt.send": {
             const targetId = String((incoming as { targetId?: unknown }).targetId ?? "").trim();
-            const prompt = String((incoming as { prompt?: unknown }).prompt ?? "");
+            const rawPrompt = String((incoming as { prompt?: unknown }).prompt ?? "");
+            const includeActiveFile = (incoming as { includeActiveFile?: unknown }).includeActiveFile === true;
+            const prompt = this.buildStartPrompt(rawPrompt, includeActiveFile);
+            if (prompt === undefined) {
+              this.broadcastAutoRun();
+              this.broadcastAffectedChats();
+              return;
+            }
             if (!targetId || !prompt.trim()) {
               this.logger.warn({ fn: "onDidReceiveMessage" }, "prompt.send Missing Fields", { hasTarget: !!targetId, hasPrompt: !!prompt.trim() });
               // Broadcast so the webview reconciles the button back to "Start".
@@ -224,13 +226,6 @@ export class WebviewHost implements vscode.WebviewViewProvider {
             return;
           }
 
-          case "provider.switch": {
-            const id = String((incoming as { id?: unknown }).id ?? "").trim();
-            if (!id) return;
-            await this.handleSwitchUser(id);
-            return;
-          }
-
           case "provider.login": {
             const id = String((incoming as { id?: unknown }).id ?? "").trim();
             if (!id) return;
@@ -243,29 +238,6 @@ export class WebviewHost implements vscode.WebviewViewProvider {
           case "settings.open": {
             await vscode.commands.executeCommand("workbench.action.openSettings", `@ext:${this.context.extension.id}`);
             this.logger.user({ fn: "onDidReceiveMessage" }, "Settings Opened");
-            return;
-          }
-
-          case "accounts.add": {
-            const providerId = String((incoming as { providerId?: unknown }).providerId ?? "").trim();
-            if (!providerId) return;
-            await this.handleAddAccount(providerId);
-            return;
-          }
-
-          case "accounts.editPassword": {
-            const providerId = String((incoming as { providerId?: unknown }).providerId ?? "").trim();
-            const email = String((incoming as { email?: unknown }).email ?? "").trim();
-            if (!providerId || !email) return;
-            await this.handleEditPasswordDirect(providerId, email);
-            return;
-          }
-
-          case "accounts.remove": {
-            const providerId = String((incoming as { providerId?: unknown }).providerId ?? "").trim();
-            const email = String((incoming as { email?: unknown }).email ?? "").trim();
-            if (!providerId || !email) return;
-            await this.handleRemoveAccountDirect(providerId, email);
             return;
           }
 
@@ -318,22 +290,6 @@ export class WebviewHost implements vscode.WebviewViewProvider {
     });
   }
 
-  public async broadcastAccounts(): Promise<void> {
-    const providers = this.monitor.list();
-    const accounts: { providerId: string; emails: string[] }[] = [];
-    for (const p of providers) {
-      const secretKey = `lakeburner.accounts.${p.id}`;
-      const raw = await this.context.secrets.get(secretKey);
-      let parsed: { email: string }[] = [];
-      try {
-        parsed = raw ? JSON.parse(raw) : [];
-        if (!Array.isArray(parsed)) parsed = [];
-      } catch { parsed = []; }
-      accounts.push({ providerId: p.id, emails: parsed.map((a) => a.email) });
-    }
-    void this.postMessageToWebview({ type: "lakeburner.accounts", accounts });
-  }
-
   public async manageAccounts(): Promise<void> {
     const providers = this.monitor.list();
     const providerItems: vscode.QuickPickItem[] = providers.map((p) => ({
@@ -356,6 +312,65 @@ export class WebviewHost implements vscode.WebviewViewProvider {
   private async postMessageToWebview(payload: OutgoingToWebview): Promise<boolean> {
     if (!this.view) return false;
     return await this.view.webview.postMessage(payload);
+  }
+
+  private buildStartPrompt(promptText: string, includeActiveFile: boolean): string | undefined {
+    if (!includeActiveFile) return promptText;
+
+    const editor = vscode.window.activeTextEditor ?? vscode.window.visibleTextEditors[0];
+    if (!editor) {
+      const reason = "Active File was selected, but no text editor is active.";
+      this.logger.warn({ fn: "buildStartPrompt" }, reason);
+      this.activity.add("BLOCK", reason);
+      vscode.window.showWarningMessage("LakeBurner: Active File is checked, but no text editor is active.");
+      return undefined;
+    }
+
+    const doc = editor.document;
+    const label = this.getDocumentLabel(doc);
+    const width = String(doc.lineCount).length;
+    const numberedLines: string[] = [];
+    for (let i = 0; i < doc.lineCount; i++) {
+      numberedLines.push(`${String(i + 1).padStart(width, " ")} | ${doc.lineAt(i).text}`);
+    }
+
+    const sections = [
+      `Active file: ${label}`,
+      `Language: ${doc.languageId}`,
+      `Lines: ${doc.lineCount}`,
+      "",
+      "Line-by-line contents:",
+      numberedLines.join("\n"),
+    ];
+
+    if (promptText.trim()) {
+      sections.push("", "User prompt:", promptText);
+    }
+
+    const composed = sections.join("\n");
+    this.logger.user({ fn: "buildStartPrompt" }, "Active File Included", {
+      file: label,
+      lineCount: doc.lineCount,
+      promptLength: promptText.length,
+      composedLength: composed.length,
+    });
+    this.activity.add("INFO", `Active file included in Start a Chat: ${label}`, {
+      lineCount: doc.lineCount,
+      promptLength: promptText.length,
+      composedLength: composed.length,
+    });
+    return composed;
+  }
+
+  private getDocumentLabel(document: vscode.TextDocument): string {
+    if (document.uri.scheme === "file") {
+      try {
+        return vscode.workspace.asRelativePath(document.uri, false);
+      } catch {
+        return document.uri.fsPath;
+      }
+    }
+    return document.uri.toString(true);
   }
 
   private async handleSwitchUser(providerId: string): Promise<void> {
@@ -434,7 +449,6 @@ export class WebviewHost implements vscode.WebviewViewProvider {
     this.activity.add("INFO", `Switched to ${selectedEmail} for ${providerLabel}`, { providerId, email: selectedEmail });
     vscode.window.showInformationMessage(`LakeBurner: Switched to ${selectedEmail} for ${providerLabel}`);
     this.logger.user({ fn: "handleSwitchUser" }, "User Switched", { providerId, email: selectedEmail });
-    void this.broadcastAccounts();
   }
 
   private async handleEditPassword(
@@ -463,7 +477,6 @@ export class WebviewHost implements vscode.WebviewViewProvider {
     await this.context.secrets.store(secretKey, JSON.stringify(accounts));
     this.logger.user({ fn: "handleEditPassword" }, "Password Updated", { email: pick.label });
     vscode.window.showInformationMessage(`LakeBurner: Password updated for ${pick.label}`);
-    void this.broadcastAccounts();
   }
 
   private async handleRemoveAccount(
@@ -481,7 +494,6 @@ export class WebviewHost implements vscode.WebviewViewProvider {
     await this.context.secrets.store(secretKey, JSON.stringify(updated));
     this.logger.user({ fn: "handleRemoveAccount" }, "Account Removed", { email: pick.label });
     vscode.window.showInformationMessage(`LakeBurner: Removed ${pick.label}`);
-    void this.broadcastAccounts();
   }
 
   private async handleAddAccount(providerId: string): Promise<void> {
@@ -519,7 +531,6 @@ export class WebviewHost implements vscode.WebviewViewProvider {
     await this.context.secrets.store(secretKey, JSON.stringify(accounts));
     this.logger.user({ fn: "handleAddAccount" }, "Account Added", { providerId, email });
     vscode.window.showInformationMessage(`LakeBurner: Added ${email} for ${providerLabel}`);
-    void this.broadcastAccounts();
   }
 
   private async handleEditPasswordDirect(providerId: string, email: string): Promise<void> {
@@ -543,7 +554,6 @@ export class WebviewHost implements vscode.WebviewViewProvider {
     await this.context.secrets.store(secretKey, JSON.stringify(accounts));
     this.logger.user({ fn: "handleEditPasswordDirect" }, "Password Updated", { providerId, email });
     vscode.window.showInformationMessage(`LakeBurner: Password updated for ${email}`);
-    void this.broadcastAccounts();
   }
 
   private async handleRemoveAccountDirect(providerId: string, email: string): Promise<void> {
@@ -556,7 +566,6 @@ export class WebviewHost implements vscode.WebviewViewProvider {
     await this.context.secrets.store(secretKey, JSON.stringify(updated));
     this.logger.user({ fn: "handleRemoveAccountDirect" }, "Account Removed", { providerId, email });
     vscode.window.showInformationMessage(`LakeBurner: Removed ${email}`);
-    void this.broadcastAccounts();
   }
 
   private getWebviewHtml(webview: vscode.Webview, nonce: string): string {
@@ -590,7 +599,10 @@ export class WebviewHost implements vscode.WebviewViewProvider {
     <div class="stack">
       <select id="promptTarget" class="select" aria-label="Chat target"></select>
       <textarea id="promptText" class="textarea" rows="8" placeholder="Type the prompt to seed the chat with..."></textarea>
-      <label class="checkbox-row"><input type="checkbox" id="singletModeCheckbox" /> Singlet Mode</label>
+      <div class="checkbox-group">
+        <label class="checkbox-row"><input type="checkbox" id="singletModeCheckbox" /> Singlet Mode</label>
+        <label class="checkbox-row"><input type="checkbox" id="activeFileCheckbox" /> Active File</label>
+      </div>
       <button id="sendPromptBtn" class="btn btn-block" type="button">Start</button>
     </div>
   </details>

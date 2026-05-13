@@ -22,7 +22,10 @@
       <div class="stack">
         <select id="promptTarget" class="select" aria-label="Chat target"></select>
         <textarea id="promptText" class="textarea" rows="8" placeholder="Type the prompt to seed the chat with..."></textarea>
-        <label class="checkbox-row"><input type="checkbox" id="singletModeCheckbox" /> Singlet Mode</label>
+        <div class="checkbox-group">
+          <label class="checkbox-row"><input type="checkbox" id="singletModeCheckbox" /> Singlet Mode</label>
+          <label class="checkbox-row"><input type="checkbox" id="activeFileCheckbox" /> Active File</label>
+        </div>
         <button id="sendPromptBtn" class="btn btn-block" type="button">Start</button>
       </div>
     </details>

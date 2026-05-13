@@ -26,7 +26,7 @@ Feature - Activity:
         ✔ 'Newest First' Checkbox should be removed. Just default to 'Newest First' always. @done(26-05-13 15:13)
         ✔ Copy-to-Clipboard should also exist in the Activity Log window in addition to the TaskBar it's currently on. @done(26-05-13 15:13)
 
-Settings:
+Feature - App Settings:
     ✔ Settings should be split into sections based on their domain-of-effect. @done(26-05-13 15:43)
         ✔ 'Start a Chat' Settings are located under a section of the same name @done(26-05-13 15:43)
         ✔ 'Active Fires' Settings are located under a section of the same name @done(26-05-13 15:43)
