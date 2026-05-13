@@ -1,12 +1,12 @@
 LakeBurner 1.0.0 TODO
 
 Feature - Start a Chat:
-☐ Auto-Run related Legacy Settings should be built into the 'Start a Chat' feature or adjusted:
-    ☐ Nudge-Prompt Target is currently Single-Overlord. This should not be a setting but instead attached to the Start a Chat Overlord Dropdown selection.
+✔ Auto-Run related Legacy Settings should be built into the 'Start a Chat' feature or adjusted: @done(26-05-13 15:13)
+    ✔ Nudge-Prompt Target is currently Single-Overlord. This should not be a setting but instead attached to the Start a Chat Overlord Dropdown selection. @done(26-05-13 15:13)
 ✔ Singlet Mode Enable/Disable (Allows the conversation to end upon the first task completion. This mode makes it so that LakeBurner never sends the nudge-prompt) @done(26-05-13 14:47)
 
 Feature - Overlords:
-☐ 'Switch User' account storage feature should have an Account Manager built into the settings.
+✔ 'Switch User' account storage feature should have an Account Manager built into the settings. @done(26-05-13 15:13)
 ✔ The 'Switch' button label should be adjusted to 'Switch User' @done(26-05-13 14:46)
 ✔ Functionality is operational. @done(26-05-13 14:46)
     ✔ 'Switch User' should allow the User to provide Email+Pass for the specified Overlord to login. @done(26-05-13 14:46)
@@ -14,11 +14,11 @@ Feature - Overlords:
     ✔ If multiple accounts are stored for an overlord, 'Switch User' should provide an Account selection dropdown for each account and an entry for 'Connect another account' @done(26-05-13 14:46)
 
 Feature - Activity:
-    ☐ Activity Box should be able to drag to grow/reduce height
-    ☐ Sessions Dropdown should not be flush against the Activity Box, keep spacing equal to the distance between the 'Start a Chat' Overlord Dropdown and Prompt Box
+    ✔ Activity Box should be able to drag to grow/reduce height @done(26-05-13 15:13)
+    ✔ Sessions Dropdown should not be flush against the Activity Box, keep spacing equal to the distance between the 'Start a Chat' Overlord Dropdown and Prompt Box @done(26-05-13 15:13)
     Activity Log:
-        ☐ 'Newest First' Checkbox should be removed. Just default to 'Newest First' always.
-        ☐ Copy-to-Clipboard should also exist in the Activity Log window in addition to the TaskBar it's currently on.
+        ✔ 'Newest First' Checkbox should be removed. Just default to 'Newest First' always. @done(26-05-13 15:13)
+        ✔ Copy-to-Clipboard should also exist in the Activity Log window in addition to the TaskBar it's currently on. @done(26-05-13 15:13)
 
 Bug - Start a Chat:
 ✔ 'Running' State should be fixed so that in no circumstance the 'Running....' state is stuck 'Running....' when the conversation is not running. (E.g. In the event of an error, auth not taken care of but chat attempted, etc) @done(26-05-13 14:46)

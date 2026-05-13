@@ -201,7 +201,6 @@ export class ActivityPopout implements vscode.Disposable {
       </select>
     </label>
     <label><input type="checkbox" id="autoscroll" checked /> Auto-scroll</label>
-    <label><input type="checkbox" id="newestFirst" checked /> Newest first</label>
     <button id="clear" type="button" title="Clear all activity entries">Clear</button>
   </header>
   <div id="list"></div>
@@ -211,7 +210,6 @@ export class ActivityPopout implements vscode.Disposable {
       const listEl = document.getElementById('list');
       const countEl = document.getElementById('count');
       const autoscrollEl = document.getElementById('autoscroll');
-      const newestFirstEl = document.getElementById('newestFirst');
       const sessionFilterEl = document.getElementById('sessionFilter');
       document.getElementById('clear').addEventListener('click', () => vscode.postMessage({ type: 'clear' }));
 
@@ -247,7 +245,7 @@ export class ActivityPopout implements vscode.Disposable {
           listEl.innerHTML = '<div class="empty">No activity yet.</div>';
           return;
         }
-        const sorted = entries.slice().sort((a, b) => newestFirstEl.checked ? b.id - a.id : a.id - b.id);
+        const sorted = entries.slice().sort((a, b) => b.id - a.id);
         const html = sorted.map(e => {
           const t = (e.tsIso || '').slice(11, 19);
           let dataHtml = '';
@@ -266,8 +264,7 @@ export class ActivityPopout implements vscode.Disposable {
         }).join('');
         listEl.innerHTML = html;
         if (autoscrollEl.checked) {
-          if (newestFirstEl.checked) window.scrollTo({ top: 0 });
-          else window.scrollTo({ top: document.body.scrollHeight });
+          window.scrollTo({ top: 0 });
         }
       }
 
@@ -291,7 +288,6 @@ export class ActivityPopout implements vscode.Disposable {
       }
 
       let lastEntries = [];
-      newestFirstEl.addEventListener('change', () => render(lastEntries));
       sessionFilterEl.addEventListener('change', () => render(lastEntries));
 
       window.addEventListener('message', (event) => {

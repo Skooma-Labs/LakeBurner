@@ -435,6 +435,14 @@ function bindButtons(): void {
     });
   }
 
+  const copyInlineBtn = el<HTMLButtonElement>("copyActivityInlineBtn");
+  if (copyInlineBtn) {
+    copyInlineBtn.addEventListener("click", () => {
+      log.user("ui.activity.copy", "Activity Copy Inline Clicked");
+      postMessageToHost({ type: "activity.copy" });
+    });
+  }
+
   const popoutBtn = el<HTMLButtonElement>("popoutActivityBtn");
   if (popoutBtn) {
     popoutBtn.addEventListener("click", (e) => {

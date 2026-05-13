@@ -273,7 +273,9 @@ export class AutoRunTicker implements vscode.Disposable {
 
     const text = (cfg.get<string>("autoRun.keepGoingPrompt", "") || "").trim()
       || "Keep going. I trust your intuitions.\n\nIf the task is complete, find ways to improve what we've done in either quantity or quality. Our goal is endless generation with asymtotal diminishing returns. This verifies we reach a state where 'there is no more to be added' and 'the data quality cannot reliably through a variety of sources contemporary to the current year as it is in a state of maximum trustoworthiness'";
-    const targetId = (cfg.get<string>("autoRun.keepGoingTargetId", "") || "").trim() || "copilot";
+    const targetId = this.affected.getActiveTargetId()
+      || (cfg.get<string>("autoRun.keepGoingTargetId", "") || "").trim()
+      || "copilot";
 
     if (!this.shouldRun()) return;
 

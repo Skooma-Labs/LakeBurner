@@ -5,6 +5,7 @@ import type { Logger } from "../frontend/ts/Logger";
 const STATE_KEY = "lakeburner.affectedChats.v1";
 const ALLOWLIST_KEY = "lakeburner.affectedChats.allowlist.v1";
 const ARM_KEY = "lakeburner.affectedChats.armUntil.v1";
+const TARGET_KEY = "lakeburner.affectedChats.activeTargetId.v1";
 
 export type ChatSessionRecord = {
   /** Stable ID derived from the first user prompt in the conversation. */
@@ -142,6 +143,7 @@ export class AffectedChats {
     await this.context.globalState.update(STATE_KEY, undefined);
     await this.context.globalState.update(ALLOWLIST_KEY, undefined);
     await this.context.globalState.update(ARM_KEY, undefined);
+    await this.context.globalState.update(TARGET_KEY, undefined);
     this.logger.task({ fn: "clearAll" }, "Affected Chats Reset");
     this.emitter.fire();
   }
@@ -245,6 +247,7 @@ export class AffectedChats {
     await this.context.globalState.update(STATE_KEY, {});
     await this.context.globalState.update(ALLOWLIST_KEY, []);
     await this.context.globalState.update(ARM_KEY, 0);
+    await this.context.globalState.update(TARGET_KEY, undefined);
     this.logger.user({ fn: "clear" }, "Affected Chats Cleared");
     this.emitter.fire();
   }
@@ -263,6 +266,18 @@ export class AffectedChats {
   private getAutoAllow(): boolean {
     const cfg = vscode.workspace.getConfiguration(this.cfgSection);
     return cfg.get<boolean>("affectedChats.autoAllowNewSessions", true);
+  }
+
+  /** The prompt-target selected in "Start a Chat". The Keep Going ticker
+   *  reads this instead of the `keepGoingTargetId` setting so the nudge
+   *  always goes to the same overlord the user picked in the sidebar. */
+  public getActiveTargetId(): string | undefined {
+    return this.context.globalState.get<string>(TARGET_KEY);
+  }
+
+  public async setActiveTargetId(targetId: string): Promise<void> {
+    await this.context.globalState.update(TARGET_KEY, targetId);
+    this.logger.task({ fn: "setActiveTargetId" }, "Active Target Updated", { targetId });
   }
 }
 

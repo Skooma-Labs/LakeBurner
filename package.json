@@ -55,6 +55,11 @@
         "command": "lakeburner.sendInitialPrompt",
         "title": "LakeBurner: Start a Chat",
         "category": "LakeBurner"
+      },
+      {
+        "command": "lakeburner.manageAccounts",
+        "title": "LakeBurner: Manage Overlord Accounts",
+        "category": "LakeBurner"
       }
     ],
     "viewsContainers": {

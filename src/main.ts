@@ -65,6 +65,7 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.window.showInformationMessage(`LakeBurner Auto-Run is now ${next ? "ON" : "OFF"}.`);
     }),
     vscode.commands.registerCommand("lakeburner.activity.popout", () => popout.open()),
+    vscode.commands.registerCommand("lakeburner.manageAccounts", () => provider.manageAccounts()),
     vscode.commands.registerCommand("lakeburner.sendInitialPrompt", async (arg?: { targetId?: string; prompt?: string }) => {
       const targets = dispatcher.listTargets();
       let targetId = arg?.targetId;

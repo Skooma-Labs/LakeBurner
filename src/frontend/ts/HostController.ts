@@ -194,6 +194,9 @@ export class WebviewHost implements vscode.WebviewViewProvider {
               // would compute if @lakeburner is later invoked in the same
               // conversation, so the entries collide cleanly.
               await this.affected.registerExternal(prompt);
+              // Remember which overlord was selected so the Keep Going ticker
+              // nudges the same target instead of reading the legacy setting.
+              await this.affected.setActiveTargetId(targetId);
             } else {
               this.activity.add("BLOCK", `Start a Chat failed: ${result.reason ?? "dispatch returned not-ok"}`, { targetId });
             }
@@ -292,6 +295,25 @@ export class WebviewHost implements vscode.WebviewViewProvider {
       sessions: this.affected.list(),
       allowedIds: this.affected.listAllowedIds(),
     });
+  }
+
+  public async manageAccounts(): Promise<void> {
+    const providers = this.monitor.list();
+    const providerItems: vscode.QuickPickItem[] = providers.map((p) => ({
+      label: p.label,
+      description: p.id,
+    }));
+    if (providerItems.length === 0) {
+      vscode.window.showInformationMessage("LakeBurner: No providers configured.");
+      return;
+    }
+    const pick = await vscode.window.showQuickPick(providerItems, {
+      title: "LakeBurner: Manage Accounts",
+      placeHolder: "Select a provider to manage accounts for",
+    });
+    if (!pick) return;
+    const providerId = pick.description!;
+    await this.handleSwitchUser(providerId);
   }
 
   private async postMessageToWebview(payload: OutgoingToWebview): Promise<boolean> {
@@ -472,8 +494,11 @@ export class WebviewHost implements vscode.WebviewViewProvider {
       <button id="copyActivityBtn" class="icon-btn section-action" type="button" aria-label="Copy" data-tooltip="Copy"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4 4v10h8V4H4zm7 9H5V5h6v8zM2 2v10h1V3h7V2H2z"/></svg></button>
       <button id="clearActivityBtn" class="icon-btn section-action" type="button" aria-label="Clear" data-tooltip="Clear"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3h3v1h-1v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4H3V3h3V2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1zm-1 0V2H7v1h2zm-4 1v9h6V4H5zm2 2h1v5H7V6zm2 0h1v5H9V6z"/></svg></button>
     </summary>
-    <select id="activitySessionFilter" class="select" aria-label="Filter by session"></select>
-    <div id="activity-log" class="activity-log" aria-live="polite"></div>
+    <div class="stack">
+      <select id="activitySessionFilter" class="select" aria-label="Filter by session"></select>
+      <div id="activity-log" class="activity-log" aria-live="polite"></div>
+      <button id="copyActivityInlineBtn" class="btn btn-block btn-secondary" type="button">Copy to Clipboard</button>
+    </div>
   </details>
 
   <details class="section">

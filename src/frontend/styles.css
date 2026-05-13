@@ -154,6 +154,13 @@ details.section > summary > .section-title {
   text-align: center;
   justify-content: center;
 }
+.btn-secondary {
+  background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.08));
+  color: var(--vscode-button-secondaryForeground, inherit);
+}
+.btn-secondary:hover {
+  background: var(--vscode-button-secondaryHoverBackground, rgba(255,255,255,0.15));
+}
 .btn-block.is-running {
   background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.08));
   color: var(--vscode-button-secondaryForeground, inherit);
@@ -418,8 +425,10 @@ details.section > summary > .section-title {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 320px;
+  height: 320px;
+  min-height: 80px;
   overflow-y: auto;
+  resize: vertical;
   border-radius: 6px;
   border: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
   background: color-mix(in srgb, var(--vscode-sideBar-background) 94%, #000 6%);
