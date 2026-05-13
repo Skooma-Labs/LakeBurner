@@ -194,8 +194,11 @@ export class AutoRunTicker implements vscode.Disposable {
   private async maybeSendKeepGoing(cfg: vscode.WorkspaceConfiguration): Promise<void> {
     if (!this.shouldRun()) return;
 
-    const enabled = cfg.get<boolean>("autoRun.keepGoingEnabled", true);
-    if (!enabled) return;
+    const singletEnabled = cfg.get<boolean>("singletMode.enabled", false);
+    const keepGoingEnabled = cfg.get<boolean>("autoRun.keepGoingEnabled", true);
+
+    // Need idle detection for either singlet mode or keep going.
+    if (!keepGoingEnabled && !singletEnabled) return;
 
     const idleMs = cfg.get<number>("autoRun.keepGoingAfterIdleMs", 15000);
     if (!Number.isFinite(idleMs) || idleMs <= 0) return;
@@ -205,7 +208,8 @@ export class AutoRunTicker implements vscode.Disposable {
 
     // Cooldown: never re-send within the idle window. Prevents a rapid
     // re-fire after the assistant briefly acknowledges and then stops.
-    if (sinceLastSend < idleMs) return;
+    // Singlet mode skips this — it terminates rather than re-sends.
+    if (!singletEnabled && sinceLastSend < idleMs) return;
 
     // Probe FIRST. We only send when this returns null AND has been null
     // for the full quiet period. Whatever happened before the probe (an
@@ -248,6 +252,24 @@ export class AutoRunTicker implements vscode.Disposable {
       );
       return;
     }
+
+    // Singlet Mode: end the session instead of nudging.
+    if (singletEnabled) {
+      const quietForFinal = now - this.lastBusyAt;
+      this.idleStreak = 0;
+      this.stallAnnouncedAt = 0;
+      this.activity.add(
+        "INFO",
+        `Singlet Mode: task completed — ending session (${Math.round(quietForFinal / 1000)}s idle, no nudge-prompt sent)`,
+        { quietForMs: quietForFinal, idleStreak: required }
+      );
+      await this.autoRun.setEnabled(false);
+      await this.affected.clear();
+      return;
+    }
+
+    // Normal keep going: if disabled, nothing more to do.
+    if (!keepGoingEnabled) return;
 
     const text = (cfg.get<string>("autoRun.keepGoingPrompt", "") || "").trim()
       || "Keep going. I trust your intuitions.\n\nIf the task is complete, find ways to improve what we've done in either quantity or quality. Our goal is endless generation with asymtotal diminishing returns. This verifies we reach a state where 'there is no more to be added' and 'the data quality cannot reliably through a variety of sources contemporary to the current year as it is in a state of maximum trustoworthiness'";

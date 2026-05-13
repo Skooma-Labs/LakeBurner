@@ -1,0 +1,14 @@
+LakeBurner 1.0.0 TODO
+
+Feature - Start a Chat:
+☐ Singlet Mode Enable/Disable (Allows the conversation to end upon the first task completion. This mode makes it so that LakeBurner never sends the nudge-prompt)
+
+Feature - Overlords:
+☐ The 'Switch' button label should be adjusted to 'Switch User'
+☐ Functionality is operational. 
+    ☐ 'Switch User' should allow the User to provide Email+Pass for the specified Overlord to login.
+    ☐ VSCode secure key vault/store should may potentially be utilized to store multiple accounts for each Overlord
+    ☐ If multiple accounts are stored for an overlord, 'Switch User' should provide an Account selection dropdown for each account and an entry for 'Connect another account'
+
+Bug - Start a Chat:
+☐ 'Running' State should be fixed so that in no circumstance the 'Running....' state is stuck 'Running....' when the conversation is not running. (E.g. In the event of an error, auth not taken care of but chat attempted, etc)

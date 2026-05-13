@@ -13,6 +13,7 @@ import type { ActivityPopout } from "../../backend/ActivityPopout";
 type IncomingFromWebview =
   | { type: "webview.ready" }
   | { type: "autoRun.toggle" }
+  | { type: "singletMode.toggle" }
   | { type: "prompt.send"; targetId: string; prompt: string }
   | { type: "prompt.saveDefault"; prompt: string }
   | { type: "affectedChats.remove"; id: string }
@@ -27,6 +28,7 @@ type OutgoingToWebview =
   | { type: "lakeburner.providers"; providers: ProviderInfo[] }
   | { type: "lakeburner.activity"; entries: ActivityEntry[] }
   | { type: "lakeburner.autoRun"; enabled: boolean }
+  | { type: "lakeburner.singletMode"; enabled: boolean }
   | { type: "lakeburner.prompt"; targets: PromptTarget[]; defaultPrompt: string }
   | { type: "lakeburner.affectedChats"; sessions: ChatSessionRecord[]; allowedIds: string[] }
   | { type: "lakeburner.error"; reason: string };
@@ -84,6 +86,9 @@ export class WebviewHost implements vscode.WebviewViewProvider {
       ) {
         this.broadcastPrompt();
       }
+      if (e.affectsConfiguration(`${this.cfgSection}.singletMode.enabled`)) {
+        this.broadcastSingletMode();
+      }
     });
     webviewView.onDidDispose(() => cfgSub.dispose());
 
@@ -110,6 +115,7 @@ export class WebviewHost implements vscode.WebviewViewProvider {
             this.broadcastProviders();
             this.broadcastActivity();
             this.broadcastAutoRun();
+            this.broadcastSingletMode();
             this.broadcastPrompt();
             this.broadcastAffectedChats();
             return;
@@ -122,6 +128,16 @@ export class WebviewHost implements vscode.WebviewViewProvider {
               next ? "Auto-Run enabled — assistants will be auto-approved" : "Auto-Run disabled — manual approvals required",
               { source: "sidebar" }
             );
+            return;
+          }
+
+          case "singletMode.toggle": {
+            const cfg = vscode.workspace.getConfiguration(this.cfgSection);
+            const current = cfg.get<boolean>("singletMode.enabled", false);
+            await cfg.update("singletMode.enabled", !current, vscode.ConfigurationTarget.Global);
+            this.logger.user({ fn: "onDidReceiveMessage" }, `Singlet Mode ${!current ? "Enabled" : "Disabled"}`);
+            this.activity.add("INFO", `Singlet Mode ${!current ? "enabled — session will end on first idle" : "disabled — Keep Going will nudge as normal"}`);
+            this.broadcastSingletMode();
             return;
           }
 
@@ -162,15 +178,23 @@ export class WebviewHost implements vscode.WebviewViewProvider {
             const prompt = String((incoming as { prompt?: unknown }).prompt ?? "");
             if (!targetId || !prompt.trim()) {
               this.logger.warn({ fn: "onDidReceiveMessage" }, "prompt.send Missing Fields", { hasTarget: !!targetId, hasPrompt: !!prompt.trim() });
+              // Broadcast so the webview reconciles the button back to "Start".
+              this.broadcastAutoRun();
+              this.broadcastAffectedChats();
               return;
             }
-            await this.autoRun.setEnabled(true);
-            // Register the dispatched chat in Affected Chats and add it to
-            // the allowlist. Fingerprint matches the one the chat participant
-            // would compute if @lakeburner is later invoked in the same
-            // conversation, so the entries collide cleanly.
-            await this.affected.registerExternal(prompt);
-            await this.dispatcher.send(targetId, prompt);
+            // Dispatch first — only arm Auto-Run + Affected Chats on success.
+            const result = await this.dispatcher.send(targetId, prompt);
+            if (result.ok) {
+              await this.autoRun.setEnabled(true);
+              // Register the dispatched chat in Affected Chats and add it to
+              // the allowlist. Fingerprint matches the one the chat participant
+              // would compute if @lakeburner is later invoked in the same
+              // conversation, so the entries collide cleanly.
+              await this.affected.registerExternal(prompt);
+            } else {
+              this.activity.add("BLOCK", `Start a Chat failed: ${result.reason ?? "dispatch returned not-ok"}`, { targetId });
+            }
             this.broadcastAutoRun();
             this.broadcastAffectedChats();
             return;
@@ -199,13 +223,7 @@ export class WebviewHost implements vscode.WebviewViewProvider {
           case "provider.switch": {
             const id = String((incoming as { id?: unknown }).id ?? "").trim();
             if (!id) return;
-            // Find the matching dispatch target and open it
-            const targets = this.dispatcher.listTargets();
-            const target = targets.find((t) => t.id === id || t.label.toLowerCase().includes(id.toLowerCase()));
-            if (target) {
-              await vscode.commands.executeCommand(target.command);
-            }
-            this.logger.user({ fn: "onDidReceiveMessage" }, "Provider Switch", { id });
+            await this.handleSwitchUser(id);
             return;
           }
 
@@ -227,6 +245,10 @@ export class WebviewHost implements vscode.WebviewViewProvider {
         const stack = err instanceof Error ? err.stack : undefined;
         this.logger.error({ fn: "onDidReceiveMessage" }, "Message Handler Failed", { reason, stack });
         void this.postMessageToWebview({ type: "lakeburner.error", reason });
+        // Always broadcast state so the webview can reconcile (e.g. un-stick
+        // the Start button after a failed prompt.send).
+        this.broadcastAutoRun();
+        this.broadcastAffectedChats();
       }
     });
   }
@@ -241,6 +263,11 @@ export class WebviewHost implements vscode.WebviewViewProvider {
 
   public broadcastAutoRun(): void {
     void this.postMessageToWebview({ type: "lakeburner.autoRun", enabled: this.autoRun.isEnabled });
+  }
+
+  public broadcastSingletMode(): void {
+    const cfg = vscode.workspace.getConfiguration(this.cfgSection);
+    void this.postMessageToWebview({ type: "lakeburner.singletMode", enabled: cfg.get<boolean>("singletMode.enabled", false) });
   }
 
   public broadcastPrompt(): void {
@@ -262,6 +289,73 @@ export class WebviewHost implements vscode.WebviewViewProvider {
   private async postMessageToWebview(payload: OutgoingToWebview): Promise<boolean> {
     if (!this.view) return false;
     return await this.view.webview.postMessage(payload);
+  }
+
+  private async handleSwitchUser(providerId: string): Promise<void> {
+    const secretKey = `lakeburner.accounts.${providerId}`;
+    const raw = await this.context.secrets.get(secretKey);
+    let accounts: { email: string; password: string }[] = [];
+    try {
+      accounts = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(accounts)) accounts = [];
+    } catch {
+      accounts = [];
+    }
+
+    // Find the provider label for display.
+    const providers = this.monitor.list();
+    const providerLabel = providers.find((p) => p.id === providerId)?.label ?? providerId;
+
+    let selectedEmail: string | undefined;
+
+    if (accounts.length > 0) {
+      const items: vscode.QuickPickItem[] = [
+        ...accounts.map((a) => ({ label: a.email, description: "Stored account" })),
+        { label: "Connect another account", description: "", kind: vscode.QuickPickItemKind.Separator },
+        { label: "Connect another account", description: "Add a new email + password" },
+      ];
+      const pick = await vscode.window.showQuickPick(items, {
+        title: `LakeBurner: Switch User — ${providerLabel}`,
+        placeHolder: "Select an account or connect a new one",
+      });
+      if (!pick) return;
+      if (pick.label !== "Connect another account") {
+        selectedEmail = pick.label;
+      }
+    }
+
+    if (!selectedEmail) {
+      const email = await vscode.window.showInputBox({
+        title: `LakeBurner: Connect to ${providerLabel}`,
+        prompt: "Enter your email address",
+        placeHolder: "user@example.com",
+        ignoreFocusOut: true,
+        validateInput: (v) => (v.includes("@") ? null : "Please enter a valid email"),
+      });
+      if (!email) return;
+
+      const password = await vscode.window.showInputBox({
+        title: `LakeBurner: Connect to ${providerLabel}`,
+        prompt: "Enter your password",
+        password: true,
+        ignoreFocusOut: true,
+      });
+      if (!password) return;
+
+      const existing = accounts.find((a) => a.email === email);
+      if (existing) {
+        existing.password = password;
+      } else {
+        accounts.push({ email, password });
+      }
+      await this.context.secrets.store(secretKey, JSON.stringify(accounts));
+      selectedEmail = email;
+      this.logger.user({ fn: "handleSwitchUser" }, "Account Stored", { providerId, email });
+    }
+
+    this.activity.add("INFO", `Switched to ${selectedEmail} for ${providerLabel}`, { providerId, email: selectedEmail });
+    vscode.window.showInformationMessage(`LakeBurner: Switched to ${selectedEmail} for ${providerLabel}`);
+    this.logger.user({ fn: "handleSwitchUser" }, "User Switched", { providerId, email: selectedEmail });
   }
 
   private getWebviewHtml(webview: vscode.Webview, nonce: string): string {
@@ -295,6 +389,7 @@ export class WebviewHost implements vscode.WebviewViewProvider {
     <div class="stack">
       <select id="promptTarget" class="select" aria-label="Chat target"></select>
       <textarea id="promptText" class="textarea" rows="8" placeholder="Type the prompt to seed the chat with..."></textarea>
+      <label class="checkbox-row"><input type="checkbox" id="singletModeCheckbox" /> Singlet Mode</label>
       <button id="sendPromptBtn" class="btn btn-block" type="button">Start</button>
     </div>
   </details>

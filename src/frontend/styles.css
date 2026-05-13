@@ -115,6 +115,22 @@ details.section > summary > .section-title {
   gap: 8px;
 }
 
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  opacity: 0.85;
+}
+.checkbox-row:hover { opacity: 1; }
+.checkbox-row input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--vscode-checkbox-background, var(--vscode-button-background));
+}
+
 .btn {
   width: 100%;
   padding: 9px 12px;

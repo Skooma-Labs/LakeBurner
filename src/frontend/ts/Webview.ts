@@ -42,6 +42,7 @@ type IncomingMessage =
   | { type: "lakeburner.providers"; providers: ProviderInfo[] }
   | { type: "lakeburner.activity"; entries: ActivityEntry[] }
   | { type: "lakeburner.autoRun"; enabled: boolean }
+  | { type: "lakeburner.singletMode"; enabled: boolean }
   | { type: "lakeburner.prompt"; targets: PromptTarget[]; defaultPrompt: string }
   | { type: "lakeburner.affectedChats"; sessions: ChatSessionRecord[]; allowedIds: string[] }
   | { type: "lakeburner.error"; reason: string };
@@ -49,6 +50,7 @@ type IncomingMessage =
 type OutgoingMessage =
   | { type: "webview.ready" }
   | { type: "autoRun.toggle" }
+  | { type: "singletMode.toggle" }
   | { type: "prompt.send"; targetId: string; prompt: string }
   | { type: "prompt.saveDefault"; prompt: string }
   | { type: "affectedChats.remove"; id: string }
@@ -140,8 +142,8 @@ function renderProviders(providers: ProviderInfo[]): void {
     actionBtn.className = "provider-action-btn";
     actionBtn.type = "button";
     if (p.installed) {
-      actionBtn.textContent = "Switch";
-      actionBtn.title = `Switch to ${p.label}`;
+      actionBtn.textContent = "Switch User";
+      actionBtn.title = `Switch user for ${p.label}`;
       actionBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         postMessageToHost({ type: "provider.switch", id: p.id });
@@ -228,6 +230,11 @@ function renderAutoRun(enabled: boolean): void {
   if (btn) btn.setAttribute("aria-pressed", enabled ? "true" : "false");
   if (state) state.textContent = enabled ? "ON" : "OFF";
   reconcileStartButton();
+}
+
+function renderSingletMode(enabled: boolean): void {
+  const checkbox = el<HTMLInputElement>("singletModeCheckbox");
+  if (checkbox) checkbox.checked = enabled;
 }
 
 let promptInitialized = false;
@@ -449,10 +456,18 @@ function bindButtons(): void {
         return;
       }
       log.user("ui.prompt.send", "Start Chat Clicked", { targetId, length: prompt.length });
+      // Disable to prevent double-clicks; actual Running state is driven
+      // exclusively by reconcileStartButton() once the host broadcasts.
       sendPromptBtn.disabled = true;
-      sendPromptBtn.classList.add("is-running");
-      sendPromptBtn.textContent = "Running...";
       postMessageToHost({ type: "prompt.send", targetId, prompt });
+    });
+  }
+
+  const singletCheckbox = el<HTMLInputElement>("singletModeCheckbox");
+  if (singletCheckbox) {
+    singletCheckbox.addEventListener("change", () => {
+      log.user("ui.singletMode.toggle", "Singlet Mode Toggled");
+      postMessageToHost({ type: "singletMode.toggle" });
     });
   }
 }
@@ -471,6 +486,9 @@ function handleIncoming(message: IncomingMessage): void {
     case "lakeburner.autoRun":
       renderAutoRun(!!message.enabled);
       return;
+    case "lakeburner.singletMode":
+      renderSingletMode(!!message.enabled);
+      return;
     case "lakeburner.prompt":
       renderPrompt(message.targets ?? [], message.defaultPrompt ?? "");
       return;
@@ -480,6 +498,7 @@ function handleIncoming(message: IncomingMessage): void {
       return;
     case "lakeburner.error":
       log.error("host", message.reason);
+      reconcileStartButton();
       return;
   }
 }

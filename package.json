@@ -215,6 +215,12 @@
           "markdownDescription": "When `true`, the Auto-Run ticker only fires while the VS Code window is focused. Prevents background ticks from approving things while you're working in another app.",
           "scope": "application"
         },
+        "lakeburner.singletMode.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "When `true`, a started chat session ends upon the first task completion. LakeBurner will **not** send the Keep Going nudge-prompt; instead it disables Auto-Run and clears Active Fires once the conversation goes idle.",
+          "scope": "application"
+        },
         "lakeburner.autoRun.keepGoingEnabled": {
           "type": "boolean",
           "default": true,
