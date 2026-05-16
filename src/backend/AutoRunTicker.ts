@@ -146,6 +146,27 @@ export class AutoRunTicker implements vscode.Disposable {
     this.lastSkipReason = null;
     this.inFlight = true;
     try {
+      // Redundancy pass: if the chat composer is currently exposing
+      // "Remove All Queued" (because something slipped past the busy
+      // probe), wipe it before doing anything else. Silent by design —
+      // the option is absent on every normal tick, which is fine.
+      if (cfg.get<boolean>("autoRun.clearQueuedEnabled", true)) {
+        const cleared = await this.autoClicker.uia.pressRemoveAllQueued({ silent: true });
+        if (cleared) {
+          // A queued item proves the chat was busy at some point in the
+          // recent past — reset the busy clock so we do not immediately
+          // fire another Keep Going on top of whatever the chat does next.
+          this.lastBusyAt = Date.now();
+          this.idleStreak = 0;
+          this.stallAnnouncedAt = 0;
+          this.activity.add(
+            "APPROVE",
+            `Cleared queued prompts via "${cleared}"`,
+            { strategy: "uia", intent: "removeQueued", name: cleared }
+          );
+        }
+      }
+
       // UIA-only in the ticker: command + coordinate strategies steal focus
       // (chat panel activation) or jump the mouse cursor. UIA Invoke() does
       // neither — it presses the button in-place without raising the window.

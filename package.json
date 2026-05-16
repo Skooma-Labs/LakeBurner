@@ -283,6 +283,12 @@
             "minimum": 1,
             "markdownDescription": "How many consecutive ticker scans must show **no Allow/Keep button AND no chat Stop/Cancel button** before the **Keep Going** prompt is dispatched. Higher values reduce the chance of queueing a prompt while the assistant is still streaming.",
             "scope": "application"
+          },
+          "lakeburner.autoRun.clearQueuedEnabled": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "Redundancy layer. When `true`, each Auto-Run tick also scans for the chat composer's **Remove All Queued** action and invokes it if present. The option only appears when prompts are queued behind an active turn, so on a healthy run this is a silent no-op — it exists to catch the rare case where a Nudge-Prompt slipped past the busy detector.",
+            "scope": "application"
           }
         }
       }

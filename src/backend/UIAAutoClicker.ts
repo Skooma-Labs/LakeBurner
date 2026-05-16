@@ -40,6 +40,28 @@ export class UIAAutoClicker {
     "Accept All",
   ];
 
+  /**
+   * Names of the chat-composer context-menu action that wipes any prompts
+   * the user (or LakeBurner, on rare races) has queued behind the active
+   * turn. We poll for these every tick — if VS Code exposes the item in
+   * the accessibility tree (either inline as a button or in an open menu),
+   * we invoke it. When the option is not present (the normal case), the
+   * scan returns null and we move on silently.
+   *
+   * Redundancy layer: even if the busy probe ever misses and a Nudge
+   * Prompt slips into the queue, this catches it on the next tick.
+   */
+  public static readonly DEFAULT_REMOVE_QUEUED_NAMES = [
+    "Remove All Queued",
+    "Remove all queued",
+    "Clear All Queued",
+    "Clear all queued",
+    "Cancel Queued",
+    "Cancel queued",
+    "Remove Queued Prompts",
+    "Clear Queued Prompts",
+  ];
+
   public static readonly DEFAULT_BUSY_NAMES = [
     // Substrings (case-insensitive) the busy probe scans for across all chat
     // controls. Any positive match means the chat is NOT idle and we must
@@ -87,7 +109,10 @@ export class UIAAutoClicker {
     "press \u201c", // smart-quote variant
     "(shift+",   // debug toolbar shortcuts: Stop (Shift+F5), etc.
     "(ctrl+",
-    "(alt+",
+    // NOTE: do NOT exclude "(alt+" \u2014 the chat cancel button's accessible
+    // name is "Cancel (Alt+BackSpace)" and a blanket "(alt+" filter was
+    // hiding it from the busy probe, so the ticker mistook an active
+    // generation for idle and queued a Nudge-Prompt on top of it.
     "(f5)",
     "(f9)",
     "(f10)",
@@ -140,6 +165,15 @@ export class UIAAutoClicker {
 
   public async pressKeep(opts: { silent?: boolean } = {}): Promise<string | null> {
     return this.pressByName("keep", "Keep", this.getNames("keep"), opts);
+  }
+
+  /**
+   * Best-effort scan for the "Remove All Queued" chat action. Returns the
+   * matched control name on success, null when nothing matched (the common
+   * case — the option only exists while there are queued prompts).
+   */
+  public async pressRemoveAllQueued(opts: { silent?: boolean } = {}): Promise<string | null> {
+    return this.pressByName("removeQueued", "Remove All Queued", this.getRemoveQueuedNames(), opts);
   }
 
   /**
@@ -199,6 +233,15 @@ export class UIAAutoClicker {
     return intent === "allow" ? UIAAutoClicker.DEFAULT_ALLOW_NAMES : UIAAutoClicker.DEFAULT_KEEP_NAMES;
   }
 
+  private getRemoveQueuedNames(): string[] {
+    const cfg = vscode.workspace.getConfiguration(this.cfgSection);
+    const raw = cfg.get<unknown>("uia.removeQueuedNames");
+    if (Array.isArray(raw) && raw.length > 0) {
+      return mergeConfiguredWithDefaults(raw, UIAAutoClicker.DEFAULT_REMOVE_QUEUED_NAMES);
+    }
+    return UIAAutoClicker.DEFAULT_REMOVE_QUEUED_NAMES;
+  }
+
   private getProcessNames(): string[] {
     const cfg = vscode.workspace.getConfiguration(this.cfgSection);
     const raw = cfg.get<unknown>("uia.processNames");
@@ -209,7 +252,7 @@ export class UIAAutoClicker {
   }
 
   private async pressByName(
-    intent: "allow" | "keep",
+    intent: string,
     label: string,
     names: string[],
     opts: { silent?: boolean }
