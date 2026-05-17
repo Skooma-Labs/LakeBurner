@@ -97,80 +97,6 @@ export class UIAAutoClicker {
     "QUEUED",
   ];
 
-  /**
-   * Substring patterns applied as exclusions during the busy scan. Any
-   * control whose normalized name matches one of these is ignored even if
-   * it would otherwise be a busy-keyword hit. This filters out workbench
-   * chrome (debug toolbar buttons, our own sidebar, etc.) so they cannot
-   * be misread as chat activity.
-   */
-  public static readonly DEFAULT_BUSY_EXCLUDES = [
-    "press \"",   // our own sidebar buttons (legacy, may be removed later)
-    "press \u201c", // smart-quote variant
-    "(shift+",   // debug toolbar shortcuts: Stop (Shift+F5), etc.
-    "(ctrl+",
-    "(alt+",     // catches Alt+letter chrome (menu bar, view actions). The
-                 // chat cancel button "Cancel (Alt+BackSpace)" would also
-                 // be filtered here, so we whitelist it via DEFAULT_BUSY_OVERRIDES
-                 // below, which is checked *before* this exclude list.
-    "(f5)",
-    "(f9)",
-    "(f10)",
-    "(f11)",
-    "lakeburner",
-    // LakeBurner activity-log phrases. Our own diagnostic text is rendered
-    // inside the sidebar/popout webviews, where it surfaces as UIA Text
-    // controls. The ancestor-name walk doesn't catch this \u2014 VS Code's
-    // webview wrapping doesn't propagate the panel title down to every
-    // descendant \u2014 so we filter by content instead. These phrases are
-    // unmistakably LakeBurner-generated; no real chat will produce them.
-    "stop button gone",
-    "until generation stops",
-    "since last stop button",
-    "holding indefinitely",
-    "idle confirmation",
-    "idle confirmed",
-    "ticker skipped",
-    "ticker started",
-    "ticker stopped",
-    "tick #",
-    "aborting keep going",
-    "session armed",
-    "session disarmed",
-    "@lakeburner",
-    "auto-run",
-    "uia pressed",
-    "uia busy probe",
-    "uia allow",
-    "uia keep",
-    // Completed turns in existing chat transcripts can leave historical
-    // elapsed-status text visible, e.g. "Working for 1m 17s". Those labels
-    // are not reliable proof that the current composer is still generating;
-    // a real active turn should still expose Stop/Cancel or a non-elapsed
-    // live status that the busy probe can catch.
-    "working for ",
-    "thinking for ",
-    "running for ",
-    "generating for ",
-    "processing for ",
-  ];
-
-  /**
-   * Substring whitelist applied BEFORE excludes during the busy scan. If a
-   * control's normalized name contains any of these, it is treated as a
-   * busy hit even if it would otherwise match an exclude pattern (e.g.
-   * "(alt+" filters Alt-letter menu chrome, but the chat cancel button
-   * "Cancel (Alt+BackSpace)" must still register).
-   *
-   * Keep this list narrow — anything here defeats the exclude safety net.
-   */
-  public static readonly DEFAULT_BUSY_OVERRIDES = [
-    "cancel (alt+backspace)",
-    "cancel chat request",
-    "stop generating",
-    "stop chat request",
-  ];
-
   public isEnabled(): boolean {
     return process.platform === "win32";
   }
@@ -205,8 +131,6 @@ export class UIAAutoClicker {
   public async findBusyIndicator(opts: { silent?: boolean } = {}): Promise<string | null> {
     if (!this.isEnabled()) return null;
     const names = this.getBusyNames();
-    const excludes = this.getBusyExcludes();
-    const overrides = this.getBusyOverrides();
     const procs = this.getProcessNames();
     let result: UIAResult;
     try {
@@ -217,8 +141,6 @@ export class UIAAutoClicker {
         // positives on any conversational use of "stop", "running", etc.
         exactOnly: true,
         containsMode: false,
-        excludePatterns: excludes,
-        overridePatterns: overrides,
         // Include Text/Group/etc. controls so the standalone agent-mode
         // status labels ("Evaluating...", "QUEUED") are visible to the
         // scan. Exact-name match keeps this safe against transcript text.
@@ -241,24 +163,6 @@ export class UIAAutoClicker {
       return mergeConfiguredWithDefaults(raw, UIAAutoClicker.DEFAULT_BUSY_NAMES);
     }
     return UIAAutoClicker.DEFAULT_BUSY_NAMES;
-  }
-
-  private getBusyExcludes(): string[] {
-    const cfg = vscode.workspace.getConfiguration(this.cfgSection);
-    const raw = cfg.get<unknown>("uia.busyExcludePatterns");
-    if (Array.isArray(raw) && raw.length > 0) {
-      return mergeConfiguredWithDefaults(raw, UIAAutoClicker.DEFAULT_BUSY_EXCLUDES);
-    }
-    return UIAAutoClicker.DEFAULT_BUSY_EXCLUDES;
-  }
-
-  private getBusyOverrides(): string[] {
-    const cfg = vscode.workspace.getConfiguration(this.cfgSection);
-    const raw = cfg.get<unknown>("uia.busyOverridePatterns");
-    if (Array.isArray(raw) && raw.length > 0) {
-      return mergeConfiguredWithDefaults(raw, UIAAutoClicker.DEFAULT_BUSY_OVERRIDES);
-    }
-    return UIAAutoClicker.DEFAULT_BUSY_OVERRIDES;
   }
 
   private getNames(intent: "allow" | "keep"): string[] {

@@ -92,6 +92,19 @@ details.section > summary > .section-title {
   opacity: 1;
 }
 
+/* Transient feedback after the host confirms a clipboard write. */
+.icon-btn.copy-success {
+  color: var(--vscode-testing-iconPassed, #73c991);
+}
+.icon-btn.copy-error {
+  color: var(--vscode-testing-iconFailed, #f14c4c);
+}
+.icon-btn.copy-success[data-tooltip]::after,
+.icon-btn.copy-error[data-tooltip]::after {
+  opacity: 1;
+  transition: opacity 0.12s;
+}
+
 .section-head {
   display: flex;
   align-items: center;
@@ -418,6 +431,15 @@ details.section > summary > .section-title {
 .chat-sub {
   font-size: 10px;
   opacity: 0.6;
+}
+.chat-elapsed {
+  font-variant-numeric: tabular-nums;
+  color: var(--vscode-charts-blue, #4ec9b0);
+  opacity: 0.85;
+}
+.chat-elapsed::before {
+  content: "\23F1\FE0F  ";
+  opacity: 0.7;
 }
 
 /* ----- Activity Log ----- */

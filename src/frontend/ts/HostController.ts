@@ -22,6 +22,7 @@ type IncomingFromWebview =
   | { type: "activity.popout" }
   | { type: "provider.login"; id: string }
   | { type: "settings.open" }
+  | { type: "accounts.manage" }
   | HostLogEnvelope
   | { type: string; [key: string]: unknown };
 
@@ -32,6 +33,7 @@ type OutgoingToWebview =
   | { type: "lakeburner.singletMode"; enabled: boolean }
   | { type: "lakeburner.prompt"; targets: PromptTarget[]; defaultPrompt: string }
   | { type: "lakeburner.affectedChats"; sessions: ChatSessionRecord[] }
+  | { type: "lakeburner.activityCopied"; ok: boolean; entries: number }
   | { type: "lakeburner.error"; reason: string };
 
 function readMessageType(value: unknown): string | undefined {
@@ -163,9 +165,21 @@ export class WebviewHost implements vscode.WebviewViewProvider {
                 return `${head}\n  data: ${body.replace(/\n/g, "\n  ")}`;
               })
               .join("\n");
-            await vscode.env.clipboard.writeText(text);
-            this.logger.user({ fn: "onDidReceiveMessage" }, "Activity Log Copied", { entries: this.activity.list().length });
-            this.activity.add("INFO", `Activity log copied to clipboard (${this.activity.list().length} entries)`);
+            let copyOk = true;
+            try {
+              await vscode.env.clipboard.writeText(text);
+            } catch (err) {
+              copyOk = false;
+              const reason = err instanceof Error ? err.message : String(err);
+              this.logger.error({ fn: "onDidReceiveMessage" }, "Activity Log Copy Failed", { reason });
+              this.activity.add("BLOCK", `Activity log copy failed: ${reason}`);
+            }
+            const entryCount = this.activity.list().length;
+            if (copyOk) {
+              this.logger.user({ fn: "onDidReceiveMessage" }, "Activity Log Copied", { entries: entryCount });
+              this.activity.add("INFO", `Activity log copied to clipboard (${entryCount} entries)`);
+            }
+            void this.postMessageToWebview({ type: "lakeburner.activityCopied", ok: copyOk, entries: entryCount });
             return;
           }
 
@@ -238,6 +252,12 @@ export class WebviewHost implements vscode.WebviewViewProvider {
           case "settings.open": {
             await vscode.commands.executeCommand("workbench.action.openSettings", `@ext:${this.context.extension.id}`);
             this.logger.user({ fn: "onDidReceiveMessage" }, "Settings Opened");
+            return;
+          }
+
+          case "accounts.manage": {
+            this.logger.user({ fn: "onDidReceiveMessage" }, "Manage Accounts Opened");
+            await this.manageAccounts();
             return;
           }
 
@@ -630,6 +650,7 @@ export class WebviewHost implements vscode.WebviewViewProvider {
   <details class="section">
     <summary class="section-summary">
       <h2 class="section-title">Overlords</h2>
+      <button id="manageAccountsBtn" class="icon-btn section-action" type="button" aria-label="Manage Accounts" data-tooltip="Manage Accounts"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm0-1a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm6 7c0-2.21-2.69-4-6-4s-6 1.79-6 4v1h12v-1zm-1 0H3c0-1.45 2.15-3 5-3s5 1.55 5 3z"/></svg></button>
       <button id="openSettingsBtn" class="icon-btn section-action" type="button" aria-label="Settings" data-tooltip="Settings"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M9.1 4.4L8.6 2H7.4l-.5 2.4-.7.3-2-1.3-.9.8 1.3 2-.3.7L2 7.4v1.2l2.4.5.3.7-1.3 2 .8.8 2-1.3.7.3.5 2.4h1.2l.5-2.4.7-.3 2 1.3.8-.8-1.3-2 .3-.7 2.4-.5V7.4l-2.4-.5-.3-.7 1.3-2-.8-.8-2 1.3-.7-.3zM8 10a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/></svg></button>
     </summary>
     <div id="provider-list" class="provider-list"></div>

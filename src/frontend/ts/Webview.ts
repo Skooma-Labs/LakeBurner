@@ -45,6 +45,7 @@ type IncomingMessage =
   | { type: "lakeburner.singletMode"; enabled: boolean }
   | { type: "lakeburner.prompt"; targets: PromptTarget[]; defaultPrompt: string }
   | { type: "lakeburner.affectedChats"; sessions: ChatSessionRecord[] }
+  | { type: "lakeburner.activityCopied"; ok: boolean; entries: number }
   | { type: "lakeburner.error"; reason: string };
 
 type OutgoingMessage =
@@ -59,6 +60,7 @@ type OutgoingMessage =
   | { type: "activity.popout" }
   | { type: "provider.login"; id: string }
   | { type: "settings.open" }
+  | { type: "accounts.manage" }
   | {
       type: "lakeburner.hostlog";
       kind: "TASK" | "USER" | "INFO" | "WARN" | "ERROR";
@@ -360,7 +362,8 @@ function renderAffectedChats(sessions: ChatSessionRecord[]): void {
   for (const s of sessions) {
     const row = document.createElement("div");
     row.className = "chat-row";
-    row.title = `id: ${s.id}\nturns: ${s.turns}\nlast: ${s.lastSeenIso}`;
+    row.title = `id: ${s.id}\nturns: ${s.turns}\nfirst: ${s.firstSeenIso}\nlast: ${s.lastSeenIso}`;
+    if (s.firstSeenIso) row.dataset.firstSeen = s.firstSeenIso;
 
     const meta = document.createElement("div");
     meta.className = "chat-meta";
@@ -373,7 +376,13 @@ function renderAffectedChats(sessions: ChatSessionRecord[]): void {
     const sub = document.createElement("span");
     sub.className = "chat-sub";
     const last = s.lastSeenIso ? s.lastSeenIso.replace("T", " ").slice(0, 19) : "";
-    sub.textContent = `${s.turns} turn${s.turns === 1 ? "" : "s"} · ${last}`;
+    sub.textContent = `${s.turns} turn${s.turns === 1 ? "" : "s"} · ${last} · `;
+
+    const elapsed = document.createElement("span");
+    elapsed.className = "chat-elapsed";
+    elapsed.textContent = formatElapsed(s.firstSeenIso);
+    sub.appendChild(elapsed);
+
     meta.appendChild(sub);
 
     row.appendChild(meta);
@@ -391,6 +400,55 @@ function renderAffectedChats(sessions: ChatSessionRecord[]): void {
     root.appendChild(row);
   }
   reconcileStartButton();
+  ensureElapsedTick();
+}
+
+let elapsedTickHandle: number | undefined;
+
+function ensureElapsedTick(): void {
+  const root = el<HTMLDivElement>("affected-chats");
+  const hasRows = !!root && root.querySelector(".chat-elapsed") !== null;
+  if (!hasRows) {
+    if (elapsedTickHandle !== undefined) {
+      window.clearInterval(elapsedTickHandle);
+      elapsedTickHandle = undefined;
+    }
+    return;
+  }
+  if (elapsedTickHandle !== undefined) return;
+  elapsedTickHandle = window.setInterval(refreshElapsedSpans, 1000);
+}
+
+function refreshElapsedSpans(): void {
+  const root = el<HTMLDivElement>("affected-chats");
+  if (!root) return;
+  const rows = root.querySelectorAll<HTMLDivElement>(".chat-row");
+  if (rows.length === 0) {
+    ensureElapsedTick();
+    return;
+  }
+  for (const row of rows) {
+    const span = row.querySelector<HTMLSpanElement>(".chat-elapsed");
+    if (!span) continue;
+    span.textContent = formatElapsed(row.dataset.firstSeen);
+  }
+}
+
+function formatElapsed(firstSeenIso: string | undefined): string {
+  if (!firstSeenIso) return "";
+  const startedAt = Date.parse(firstSeenIso);
+  if (!Number.isFinite(startedAt)) return "";
+  const deltaMs = Math.max(0, Date.now() - startedAt);
+  const totalSec = Math.floor(deltaMs / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const totalMin = Math.floor(totalSec / 60);
+  if (totalMin < 60) {
+    const sec = totalSec % 60;
+    return sec === 0 ? `${totalMin}m` : `${totalMin}m ${sec}s`;
+  }
+  const totalHr = Math.floor(totalMin / 60);
+  const min = totalMin % 60;
+  return min === 0 ? `${totalHr}h` : `${totalHr}h ${min}m`;
 }
 
 function bindButtons(): void {
@@ -468,6 +526,16 @@ function bindButtons(): void {
     });
   }
 
+  const manageAccountsBtn = el<HTMLButtonElement>("manageAccountsBtn");
+  if (manageAccountsBtn) {
+    manageAccountsBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      log.user("ui.accounts.manage", "Manage Accounts Clicked");
+      postMessageToHost({ type: "accounts.manage" });
+    });
+  }
+
   const settingsBtn = el<HTMLButtonElement>("openSettingsBtn");
   if (settingsBtn) {
     settingsBtn.addEventListener("click", (e) => {
@@ -477,6 +545,26 @@ function bindButtons(): void {
       postMessageToHost({ type: "settings.open" });
     });
   }
+}
+
+let copyFeedbackTimer: number | undefined;
+const COPY_DEFAULT_TOOLTIP = "Copy";
+
+function flashCopyButtonFeedback(ok: boolean, entries: number): void {
+  const btn = el<HTMLButtonElement>("copyActivityBtn");
+  if (!btn) return;
+  if (copyFeedbackTimer !== undefined) {
+    window.clearTimeout(copyFeedbackTimer);
+    copyFeedbackTimer = undefined;
+  }
+  btn.classList.remove("copy-success", "copy-error");
+  btn.classList.add(ok ? "copy-success" : "copy-error");
+  btn.setAttribute("data-tooltip", ok ? `Copied ${entries} ${entries === 1 ? "entry" : "entries"}` : "Copy failed");
+  copyFeedbackTimer = window.setTimeout(() => {
+    btn.classList.remove("copy-success", "copy-error");
+    btn.setAttribute("data-tooltip", COPY_DEFAULT_TOOLTIP);
+    copyFeedbackTimer = undefined;
+  }, 1500);
 }
 
 function handleIncoming(message: IncomingMessage): void {
@@ -502,6 +590,9 @@ function handleIncoming(message: IncomingMessage): void {
     case "lakeburner.affectedChats":
       renderAffectedChats(message.sessions ?? []);
       updateActivitySessionFilter(message.sessions ?? []);
+      return;
+    case "lakeburner.activityCopied":
+      flashCopyButtonFeedback(!!message.ok, message.entries ?? 0);
       return;
     case "lakeburner.error":
       log.error("host", message.reason);
