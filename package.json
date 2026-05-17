@@ -308,6 +308,11 @@
             "type": "boolean",
             "default": true,
             "markdownDescription": "When `true`, the **Keep Going** nudge calls `ShowWindowAsync(SW_SHOWNOACTIVATE)` on minimized VS Code windows so the chat composer's controls are realized in the UI Automation tree. This does **not** raise the window above other apps, steal keyboard focus, or move the mouse cursor — fullscreen games keep input. Set to `false` to silently skip the nudge while VS Code is minimized."
+          },
+          "lakeburner.autoRun.preserveForeground": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "When `true`, LakeBurner captures the currently-focused window **before** any dispatch (Start a Chat, Keep Going nudge) and restores it **after**, using the Windows AttachThreadInput trick to bypass the foreground lock. Lets you keep gaming / browsing while the auto-runner does its work — if VS Code does need to surface momentarily, focus returns to your previous app within ~100ms. Windows-only; no-op elsewhere."
           }
         }
       }

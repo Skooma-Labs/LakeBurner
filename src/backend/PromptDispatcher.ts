@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import type { Logger } from "../frontend/ts/Logger";
 import type { ActivityLog } from "./ActivityLog";
 import type { UIAAutoClicker } from "./UIAAutoClicker";
+import { ForegroundGuard } from "./ForegroundGuard";
 
 export type DispatchMode = "string" | "object-query" | "clipboard" | "codex-deeplink" | "uia-compose";
 
@@ -108,6 +109,15 @@ export class PromptDispatcher {
       length: trimmed.length,
     });
 
+    const preserveFg = vscode.workspace
+      .getConfiguration(this.cfgSection)
+      .get<boolean>("autoRun.preserveForeground", true);
+    // Capture whatever window currently has focus (the user's game, browser,
+    // editor — anything but us) so we can hand it back after VS Code raises
+    // itself to surface the chat panel. Skipped for uia-compose, which
+    // doesn't take focus in the first place.
+    const fgToken = preserveFg && target.mode !== "uia-compose" ? await ForegroundGuard.capture() : null;
+
     try {
       switch (target.mode) {
         case "string":
@@ -181,6 +191,12 @@ export class PromptDispatcher {
       }
 
       return { ok: false, via: target.mode, target, reason };
+    } finally {
+      // Hand focus back to whatever the user was using before the dispatch.
+      // Fires after every return path above (success, miss, throw).
+      if (fgToken) {
+        await ForegroundGuard.restore(fgToken);
+      }
     }
   }
 
@@ -212,10 +228,22 @@ export class PromptDispatcher {
     const restoreCfg = vscode.workspace
       .getConfiguration(this.cfgSection)
       .get<boolean>("uia.restoreMinimizedForNudge", true);
+    const preserveFg = vscode.workspace
+      .getConfiguration(this.cfgSection)
+      .get<boolean>("autoRun.preserveForeground", true);
 
     this.activity.add("REQUEST", `Nudge → ${target.label} (uia-compose)`, { targetId, length: trimmed.length });
 
-    const result = await this.uia.composeAndSend(trimmed, { silent: false, restoreIfMinimized: restoreCfg });
+    // uia-compose shouldn't take focus, but defensively capture+restore so
+    // that even if Chromium opportunistically activates the window on
+    // SW_SHOWNOACTIVATE, the user's game/browser keeps focus.
+    const fgToken = preserveFg ? await ForegroundGuard.capture() : null;
+    let result;
+    try {
+      result = await this.uia.composeAndSend(trimmed, { silent: false, restoreIfMinimized: restoreCfg });
+    } finally {
+      if (fgToken) await ForegroundGuard.restore(fgToken);
+    }
     if (!result.ok) {
       const reason = result.reason ?? "unknown";
       this.activity.add("INFO", `Nudge skipped: ${reason} — will retry next tick`, { targetId, reason });

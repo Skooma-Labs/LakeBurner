@@ -21,7 +21,7 @@ Feature - Overlords:
         ✔ If multiple accounts are stored for an overlord, 'Switch User' should provide an Account selection dropdown for each account and an entry for 'Connect another account' @done(26-05-13 14:46)
 
 Feature - Active Fires:
-    ☐ Each Active Fire Item should show a 'Time Elapsed' next to the turn & time stamp
+    ✔ Each Active Fire Item should show a 'Time Elapsed' next to the turn & time stamp @done(26-05-17 03:35)
 
 Feature - Activity:
     ☐ Pressing the 'Copy' button should provide some feedback about successfully copying to clipboard.
@@ -38,3 +38,5 @@ Feature - App Settings:
         ✔ 'Activity' Settings are located under a section of the same name @done(26-05-13 15:43)
         ✔ 'Overlords' Settings are located under a section of the same name @done(26-05-13 15:43)
     ☐ Redundant Settings Removed / Adjusted
+        ☐ Lakeburner > Uia: Chat Send Names Removed
+        ☐ Lakeburner > Uia: Restore Minimized for Nudge Removed (Default Behavior)
