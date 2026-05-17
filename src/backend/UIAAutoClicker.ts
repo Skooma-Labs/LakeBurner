@@ -63,38 +63,19 @@ export class UIAAutoClicker {
   ];
 
   public static readonly DEFAULT_BUSY_NAMES = [
-    // Substrings (case-insensitive) the busy probe scans for across all chat
-    // controls. Any positive match means the chat is NOT idle and we must
-    // not send Keep Going. The probe runs in `containsMode` and over a wider
-    // set of control types (Button + Text + Group + ProgressBar) so it can
-    // catch the "Loading", "QUEUED", and "Generating" inline indicators VS
-    // Code shows while a request is streaming or queued.
+    // Exact (prefix-match) names of the chat composer's cancel/stop button.
+    // When this button is present the chat is still generating; anything
+    // else (Send, "[Alt] Send to New Chat …") means idle and we may nudge.
     //
-    // Be intentionally conservative — false positives (think busy when not)
-    // are harmless (we just wait longer); false negatives are catastrophic
-    // (we queue on top of an active generation).
-    "stop",
-    "cancel",
-    "loading",
-    "queued",
-    "generating",
-    "working",
-    "thinking",
-    "running",
-    // Tool-execution phases. Copilot tool calls don't always show a Stop
-    // button between sub-steps; instead the chat surfaces gerunds like
-    // "Preparing", "Creating file", "Analyzing". Without these, the idle
-    // countdown ticks straight through tool execution and we queue mid-run.
-    "preparing",
-    "creating",
-    "editing",
-    "applying",
-    "executing",
-    "fetching",
-    "analyzing",
-    "saving",
-    "searching",
-    "processing",
+    // Previous broad substring-scan approaches false-positived on chat
+    // transcript text ("the build is running", old "Stop" labels in earlier
+    // turns) and left the probe stuck in busy forever — Keep Going never
+    // fired. The composer submit button is the single source of truth for
+    // generation state and is unambiguous to match.
+    "Cancel (Alt+BackSpace)",
+    "Cancel chat request",
+    "Stop generating",
+    "Stop chat request",
   ];
 
   /**
@@ -193,9 +174,12 @@ export class UIAAutoClicker {
   }
 
   /**
-   * Probe-only UIA scan: returns the matched button name if a chat "busy"
-   * indicator (Cancel / Stop / Stop generating) is present and enabled,
-   * else null. Does NOT invoke any control. Used by AutoRunTicker to avoid
+   * Probe-only UIA scan: returns the matched button name if the chat
+   * composer's cancel/stop button ("Cancel (Alt+BackSpace)", "Stop
+   * generating", etc.) is present, else null. Button-only, exact/prefix
+   * name match — does NOT scan transcript text or use substring matching,
+   * which previously produced permanent false-positives on conversational
+   * content. Does NOT invoke any control. Used by AutoRunTicker to avoid
    * sending the Keep Going prompt while an assistant is still streaming.
    */
   public async findBusyIndicator(opts: { silent?: boolean } = {}): Promise<string | null> {
@@ -208,10 +192,10 @@ export class UIAAutoClicker {
     try {
       result = await runUIAFinder(names, procs, {
         probeOnly: true,
-        containsMode: true,
+        containsMode: false,
         excludePatterns: excludes,
         overridePatterns: overrides,
-        widerControls: true,
+        widerControls: false,
       });
     } catch (err: unknown) {
       const reason = err instanceof Error ? err.message : String(err);

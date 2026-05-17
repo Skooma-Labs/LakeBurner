@@ -30,10 +30,6 @@ export class AutoRunTicker implements vscode.Disposable {
   private lastBusyAt = Date.now();
   /** Number of consecutive ticks where the busy probe returned no match. */
   private idleStreak = 0;
-  /** Wall-clock ms when we last announced "watching for stall" (one-shot diagnostic). */
-  private stallAnnouncedAt = 0;
-  /** Wall-clock ms when we last announced the chat is busy (one-shot diagnostic). */
-  private busyAnnouncedAt = 0;
 
   constructor(
     private readonly cfgSection: string,
@@ -158,7 +154,6 @@ export class AutoRunTicker implements vscode.Disposable {
           // fire another Keep Going on top of whatever the chat does next.
           this.lastBusyAt = Date.now();
           this.idleStreak = 0;
-          this.stallAnnouncedAt = 0;
           this.activity.add(
             "APPROVE",
             `Cleared queued prompts via "${cleared}"`,
@@ -184,7 +179,6 @@ export class AutoRunTicker implements vscode.Disposable {
         // accumulates straight through tool approvals.
         this.lastBusyAt = Date.now();
         this.idleStreak = 0;
-        this.stallAnnouncedAt = 0;
         this.activity.add("APPROVE", `Tick #${this.tickCount} fired (Allow: ${allowResult.via}, Keep: ${keepResult.via})`, {
           tickCount: this.tickCount,
           firedCount: this.firedCount,
@@ -238,26 +232,21 @@ export class AutoRunTicker implements vscode.Disposable {
     if (busy) {
       this.lastBusyAt = now;
       this.idleStreak = 0;
-      this.stallAnnouncedAt = 0;
-      if (now - this.busyAnnouncedAt > 15000) {
-        this.busyAnnouncedAt = now;
-        this.activity.add("INFO", `Chat busy (${busy}) — holding indefinitely until generation stops`, { busy });
-      }
+      this.activity.add(
+        "INFO",
+        `Tick #${this.tickCount} probe: busy ("${busy}") — chat still generating, holding`,
+        { tickCount: this.tickCount, busy }
+      );
       return;
     }
-    this.busyAnnouncedAt = 0;
 
     const quietFor = now - this.lastBusyAt;
     if (quietFor < idleMs) {
-      // Announce once per quiet window so the user sees the countdown is real.
-      if (this.stallAnnouncedAt < this.lastBusyAt) {
-        this.stallAnnouncedAt = now;
-        this.activity.add(
-          "INFO",
-          `Stop button gone — will send Keep Going after ${Math.round((idleMs - quietFor) / 1000)}s of continued quiet`,
-          { remainingMs: idleMs - quietFor, idleMs, quietFor }
-        );
-      }
+      this.activity.add(
+        "INFO",
+        `Tick #${this.tickCount} probe: idle — countdown ${Math.round(quietFor / 1000)}s / ${Math.round(idleMs / 1000)}s before Keep Going`,
+        { tickCount: this.tickCount, remainingMs: idleMs - quietFor, idleMs, quietFor }
+      );
       return;
     }
 
@@ -277,7 +266,6 @@ export class AutoRunTicker implements vscode.Disposable {
     if (singletEnabled) {
       const quietForFinal = now - this.lastBusyAt;
       this.idleStreak = 0;
-      this.stallAnnouncedAt = 0;
       this.activity.add(
         "INFO",
         `Singlet Mode: task completed — ending session (${Math.round(quietForFinal / 1000)}s idle, no nudge-prompt sent)`,
@@ -306,7 +294,6 @@ export class AutoRunTicker implements vscode.Disposable {
     if (finalBusy) {
       this.lastBusyAt = Date.now();
       this.idleStreak = 0;
-      this.stallAnnouncedAt = 0;
       this.activity.add(
         "INFO",
         `Aborting Keep Going dispatch — ${finalBusy} re-appeared in final-guard probe`,
@@ -317,7 +304,6 @@ export class AutoRunTicker implements vscode.Disposable {
 
     this.lastKeepGoingAt = now;
     this.idleStreak = 0;
-    this.stallAnnouncedAt = 0;
     const quietForFinal = now - this.lastBusyAt;
     this.activity.add("REQUEST", `Idle confirmed (${Math.round(quietForFinal / 1000)}s since last Stop button, ${required} confirmation ticks) → sending Keep Going to ${targetId}`, {
       quietForMs: quietForFinal,
