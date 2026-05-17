@@ -174,7 +174,7 @@ export class UIAAutoClicker {
     if (!trimmed) return { ok: false, reason: "EMPTY_TEXT" };
 
     const inputNames = this.getChatInputNames();
-    const sendNames = this.getChatSendNames();
+    const sendNames = UIAAutoClicker.DEFAULT_CHAT_SEND_NAMES;
     const procs = this.getProcessNames();
     const restoreIfMinimized = opts.restoreIfMinimized !== false;
 
@@ -291,15 +291,6 @@ export class UIAAutoClicker {
       return mergeConfiguredWithDefaults(raw, UIAAutoClicker.DEFAULT_CHAT_INPUT_NAMES);
     }
     return UIAAutoClicker.DEFAULT_CHAT_INPUT_NAMES;
-  }
-
-  private getChatSendNames(): string[] {
-    const cfg = vscode.workspace.getConfiguration(this.cfgSection);
-    const raw = cfg.get<unknown>("uia.chatSendNames");
-    if (Array.isArray(raw) && raw.length > 0) {
-      return mergeConfiguredWithDefaults(raw, UIAAutoClicker.DEFAULT_CHAT_SEND_NAMES);
-    }
-    return UIAAutoClicker.DEFAULT_CHAT_SEND_NAMES;
   }
 
   private getProcessNames(): string[] {

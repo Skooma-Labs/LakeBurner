@@ -297,18 +297,6 @@
             "markdownDescription": "Additional accessible names to try when locating the chat composer's text input for the **Keep Going** nudge. Merged with the built-in defaults (`Ask Copilot`, `Type your task`, `Chat input`, etc.). Only needed if your chat extension uses a non-standard label.",
             "scope": "application"
           },
-          "lakeburner.uia.chatSendNames": {
-            "type": "array",
-            "items": { "type": "string" },
-            "default": [],
-            "markdownDescription": "Additional accessible names to try when locating the chat composer's **Send** button. Merged with the built-in defaults (`Send`, `Send (Enter)`, `Submit`, etc.).",
-            "scope": "application"
-          },
-          "lakeburner.uia.restoreMinimizedForNudge": {
-            "type": "boolean",
-            "default": true,
-            "markdownDescription": "When `true`, the **Keep Going** nudge calls `ShowWindowAsync(SW_SHOWNOACTIVATE)` on minimized VS Code windows so the chat composer's controls are realized in the UI Automation tree. This does **not** raise the window above other apps, steal keyboard focus, or move the mouse cursor — fullscreen games keep input. Set to `false` to silently skip the nudge while VS Code is minimized."
-          },
           "lakeburner.autoRun.preserveForeground": {
             "type": "boolean",
             "default": true,

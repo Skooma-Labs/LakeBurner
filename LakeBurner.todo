@@ -37,13 +37,13 @@ Feature - App Settings:
         ✔ 'Active Fires' Settings are located under a section of the same name @done(26-05-13 15:43)
         ✔ 'Activity' Settings are located under a section of the same name @done(26-05-13 15:43)
         ✔ 'Overlords' Settings are located under a section of the same name @done(26-05-13 15:43)
-    ☐ Redundant Settings Removed / Adjusted
-        ☐ Lakeburner > Uia: Chat Send Names Removed
-        ☐ Lakeburner > Uia: Restore Minimized for Nudge Removed (Default Behavior)
+    ✔ Redundant Settings Removed / Adjusted @done(26-05-17 04:00)
+        ✔ Lakeburner > Uia: Chat Send Names Removed @done(26-05-17 04:00)
+        ✔ Lakeburner > Uia: Restore Minimized for Nudge Removed (Default Behavior) @done(26-05-17 04:00)
 
 
+
+Test Prompt:
 We want TauriPlate to be a Rust+Tauri+React "Identical-but-TauriRustReact" application stack.
-
 Please try your absolute best do do a thorough, high-fidelity sweep and ensure we're 100% "Identical-but-Tauri+Rust+React" instead of Rust+Iced.rs. Any chance we can get closer to identical, visually?
-
 do not stop until the visual layer is identically tightened: dimensions, gutters, border treatment, tab/sidebar shapes, and the exact evergreen palette need to line up more closely.

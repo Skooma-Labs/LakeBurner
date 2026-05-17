@@ -153,12 +153,8 @@ export class PromptDispatcher {
           // executeCommand on miss — that would re-introduce the
           // foreground/cursor bug this mode exists to prevent. The caller
           // (Auto-Run ticker) retries on the next tick.
-          const restoreCfg = vscode.workspace
-            .getConfiguration(this.cfgSection)
-            .get<boolean>("uia.restoreMinimizedForNudge", true);
           const result = await this.uia.composeAndSend(trimmed, {
             silent: false,
-            restoreIfMinimized: restoreCfg,
           });
           if (!result.ok) {
             const reason = result.reason ?? "unknown";
