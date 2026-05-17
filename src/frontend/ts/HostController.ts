@@ -95,6 +95,17 @@ export class WebviewHost implements vscode.WebviewViewProvider {
     });
     webviewView.onDidDispose(() => cfgSub.dispose());
 
+    // Without these the AutoRunTicker's singlet-mode finalize (which calls
+    // autoRun.setEnabled(false) and affected.clear()) updates backend state
+    // but never tells the webview, so the Start button stays stuck on
+    // "Running..." until the panel is reloaded.
+    const autoRunSub = this.autoRun.onChange(() => this.broadcastAutoRun());
+    const affectedSub = this.affected.onChange(() => this.broadcastAffectedChats());
+    webviewView.onDidDispose(() => {
+      autoRunSub.dispose();
+      affectedSub.dispose();
+    });
+
     webviewView.webview.onDidReceiveMessage(async (raw: unknown) => {
       try {
         const type = readMessageType(raw);
@@ -621,7 +632,7 @@ export class WebviewHost implements vscode.WebviewViewProvider {
       <textarea id="promptText" class="textarea" rows="8" placeholder="Type the prompt to seed the chat with..."></textarea>
       <div class="checkbox-group">
         <label class="checkbox-row"><input type="checkbox" id="singletModeCheckbox" /> Singlet Mode</label>
-        <label class="checkbox-row"><input type="checkbox" id="activeFileCheckbox" /> Active File</label>
+        <label class="checkbox-row"><input type="checkbox" id="activeFileCheckbox" /> Include Active File</label>
       </div>
       <button id="sendPromptBtn" class="btn btn-block" type="button">Start</button>
     </div>
