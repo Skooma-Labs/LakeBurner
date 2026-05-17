@@ -201,55 +201,18 @@ export class PromptDispatcher {
   }
 
   /**
-   * Background-safe nudge dispatch. Used by the Auto-Run ticker after the
-   * chat has been started — the composer already exists, so we can type
-   * into it via UIA ValuePattern + invoke Send via InvokePattern WITHOUT
-   * touching window focus, raising the panel, or moving the cursor.
+   * Nudge dispatch from the Auto-Run ticker. Delegates to {@link send} so the
+   * nudge uses whatever dispatch mode the target is configured for. The
+   * ticker wraps the whole tick in a ForegroundGuard, so any momentary
+   * VS Code activation caused by `object-query` mode is undone immediately
+   * — the user's game/browser stays in front.
    *
-   * Always uses uia-compose regardless of the target's configured mode.
-   * Never falls back to executeCommand on miss — that would foreground the
-   * chat panel and steal mouse capture from games / other fullscreen apps.
-   * Returns ok:false on miss so the caller retries on the next tick.
+   * uia-compose is unreliable for Copilot's Monaco/contenteditable composer
+   * (ValuePattern.SetValue claims success but text never lands), so we no
+   * longer force it here.
    */
   public async sendNudge(targetId: string, prompt: string): Promise<DispatchResult> {
-    const target =
-      this.listTargets().find((t) => t.id === targetId) ?? {
-        id: targetId,
-        label: targetId,
-        command: "",
-        mode: "uia-compose" as const,
-      };
-
-    const trimmed = prompt.trim();
-    if (!trimmed) {
-      return { ok: false, via: "uia-compose", target, reason: "Prompt is empty" };
-    }
-
-    const restoreCfg = vscode.workspace
-      .getConfiguration(this.cfgSection)
-      .get<boolean>("uia.restoreMinimizedForNudge", true);
-    const preserveFg = vscode.workspace
-      .getConfiguration(this.cfgSection)
-      .get<boolean>("autoRun.preserveForeground", true);
-
-    this.activity.add("REQUEST", `Nudge → ${target.label} (uia-compose)`, { targetId, length: trimmed.length });
-
-    // uia-compose shouldn't take focus, but defensively capture+restore so
-    // that even if Chromium opportunistically activates the window on
-    // SW_SHOWNOACTIVATE, the user's game/browser keeps focus.
-    const fgToken = preserveFg ? await ForegroundGuard.capture() : null;
-    let result;
-    try {
-      result = await this.uia.composeAndSend(trimmed, { silent: false, restoreIfMinimized: restoreCfg });
-    } finally {
-      if (fgToken) await ForegroundGuard.restore(fgToken);
-    }
-    if (!result.ok) {
-      const reason = result.reason ?? "unknown";
-      this.activity.add("INFO", `Nudge skipped: ${reason} — will retry next tick`, { targetId, reason });
-      return { ok: false, via: "uia-compose", target, reason };
-    }
-    return { ok: true, via: "uia-compose", target };
+    return this.send(targetId, prompt);
   }
 
   private parseTarget(raw: unknown): PromptTarget | null {

@@ -253,7 +253,7 @@ function reconcileStartButton(): void {
   btn.disabled = false;
   btn.classList.toggle("is-running", running);
   btn.dataset.mode = running ? "stop" : "start";
-  btn.textContent = running ? "Stop" : "Start";
+  btn.textContent = running ? "Running..." : "Start";
 }
 
 function getSelectedSessionFilter(): string {

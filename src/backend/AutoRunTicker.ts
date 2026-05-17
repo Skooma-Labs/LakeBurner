@@ -5,6 +5,7 @@ import type { AutoClicker } from "./AutoClicker";
 import type { AffectedChats } from "./AffectedChats";
 import type { ActivityLog } from "./ActivityLog";
 import type { PromptDispatcher } from "./PromptDispatcher";
+import { ForegroundGuard } from "./ForegroundGuard";
 
 /**
  * Drives the silent "press Allow + press Keep" loop while Auto-Run is on,
@@ -141,6 +142,12 @@ export class AutoRunTicker implements vscode.Disposable {
     // Reset the suppressor when we actually fire.
     this.lastSkipReason = null;
     this.inFlight = true;
+    // Capture whatever window the user has in foreground (their game, browser,
+    // etc.) before any UIA action this tick might cause VS Code to surface.
+    // Restored in the finally so the user gets their app back regardless of
+    // whether allow/keep/nudge fired or threw.
+    const preserveFg = cfg.get<boolean>("autoRun.preserveForeground", true);
+    const fgToken = preserveFg ? await ForegroundGuard.capture() : null;
     try {
       // Redundancy pass: if the chat composer is currently exposing
       // "Remove All Queued" (because something slipped past the busy
@@ -191,6 +198,13 @@ export class AutoRunTicker implements vscode.Disposable {
       }
     } finally {
       this.inFlight = false;
+      if (fgToken) {
+        // Brief delay so any focus-stealing call has time to fully resolve
+        // before we yank focus back — otherwise the foreground app can race
+        // and lose.
+        await new Promise((r) => setTimeout(r, 80));
+        await ForegroundGuard.restore(fgToken);
+      }
     }
   }
 
