@@ -312,7 +312,7 @@ export class AutoRunTicker implements vscode.Disposable {
       idleStreak: required,
     });
     try {
-      const result = await this.dispatcher.send(targetId, text);
+      const result = await this.dispatcher.sendNudge(targetId, text);
       // Treat the dispatch itself as activity, so we don't immediately fire
       // another Keep Going on the very next tick. Also reset the busy clock
       // so the cooldown countdown begins from now.

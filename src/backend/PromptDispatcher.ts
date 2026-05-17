@@ -30,7 +30,7 @@ const DEFAULT_TARGETS: PromptTarget[] = [
     id: "copilot",
     label: "GitHub Copilot",
     command: "workbench.action.chat.open",
-    mode: "uia-compose",
+    mode: "object-query",
     extraArgs: { mode: "agent" },
   },
   {
@@ -182,6 +182,46 @@ export class PromptDispatcher {
 
       return { ok: false, via: target.mode, target, reason };
     }
+  }
+
+  /**
+   * Background-safe nudge dispatch. Used by the Auto-Run ticker after the
+   * chat has been started — the composer already exists, so we can type
+   * into it via UIA ValuePattern + invoke Send via InvokePattern WITHOUT
+   * touching window focus, raising the panel, or moving the cursor.
+   *
+   * Always uses uia-compose regardless of the target's configured mode.
+   * Never falls back to executeCommand on miss — that would foreground the
+   * chat panel and steal mouse capture from games / other fullscreen apps.
+   * Returns ok:false on miss so the caller retries on the next tick.
+   */
+  public async sendNudge(targetId: string, prompt: string): Promise<DispatchResult> {
+    const target =
+      this.listTargets().find((t) => t.id === targetId) ?? {
+        id: targetId,
+        label: targetId,
+        command: "",
+        mode: "uia-compose" as const,
+      };
+
+    const trimmed = prompt.trim();
+    if (!trimmed) {
+      return { ok: false, via: "uia-compose", target, reason: "Prompt is empty" };
+    }
+
+    const restoreCfg = vscode.workspace
+      .getConfiguration(this.cfgSection)
+      .get<boolean>("uia.restoreMinimizedForNudge", true);
+
+    this.activity.add("REQUEST", `Nudge → ${target.label} (uia-compose)`, { targetId, length: trimmed.length });
+
+    const result = await this.uia.composeAndSend(trimmed, { silent: false, restoreIfMinimized: restoreCfg });
+    if (!result.ok) {
+      const reason = result.reason ?? "unknown";
+      this.activity.add("INFO", `Nudge skipped: ${reason} — will retry next tick`, { targetId, reason });
+      return { ok: false, via: "uia-compose", target, reason };
+    }
+    return { ok: true, via: "uia-compose", target };
   }
 
   private parseTarget(raw: unknown): PromptTarget | null {
