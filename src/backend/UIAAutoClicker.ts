@@ -109,10 +109,10 @@ export class UIAAutoClicker {
     "press \u201c", // smart-quote variant
     "(shift+",   // debug toolbar shortcuts: Stop (Shift+F5), etc.
     "(ctrl+",
-    // NOTE: do NOT exclude "(alt+" \u2014 the chat cancel button's accessible
-    // name is "Cancel (Alt+BackSpace)" and a blanket "(alt+" filter was
-    // hiding it from the busy probe, so the ticker mistook an active
-    // generation for idle and queued a Nudge-Prompt on top of it.
+    "(alt+",     // catches Alt+letter chrome (menu bar, view actions). The
+                 // chat cancel button "Cancel (Alt+BackSpace)" would also
+                 // be filtered here, so we whitelist it via DEFAULT_BUSY_OVERRIDES
+                 // below, which is checked *before* this exclude list.
     "(f5)",
     "(f9)",
     "(f10)",
@@ -155,6 +155,22 @@ export class UIAAutoClicker {
     "processing for ",
   ];
 
+  /**
+   * Substring whitelist applied BEFORE excludes during the busy scan. If a
+   * control's normalized name contains any of these, it is treated as a
+   * busy hit even if it would otherwise match an exclude pattern (e.g.
+   * "(alt+" filters Alt-letter menu chrome, but the chat cancel button
+   * "Cancel (Alt+BackSpace)" must still register).
+   *
+   * Keep this list narrow — anything here defeats the exclude safety net.
+   */
+  public static readonly DEFAULT_BUSY_OVERRIDES = [
+    "cancel (alt+backspace)",
+    "cancel chat request",
+    "stop generating",
+    "stop chat request",
+  ];
+
   public isEnabled(): boolean {
     return process.platform === "win32";
   }
@@ -186,6 +202,7 @@ export class UIAAutoClicker {
     if (!this.isEnabled()) return null;
     const names = this.getBusyNames();
     const excludes = this.getBusyExcludes();
+    const overrides = this.getBusyOverrides();
     const procs = this.getProcessNames();
     let result: UIAResult;
     try {
@@ -193,6 +210,7 @@ export class UIAAutoClicker {
         probeOnly: true,
         containsMode: true,
         excludePatterns: excludes,
+        overridePatterns: overrides,
         widerControls: true,
       });
     } catch (err: unknown) {
@@ -221,6 +239,15 @@ export class UIAAutoClicker {
       return mergeConfiguredWithDefaults(raw, UIAAutoClicker.DEFAULT_BUSY_EXCLUDES);
     }
     return UIAAutoClicker.DEFAULT_BUSY_EXCLUDES;
+  }
+
+  private getBusyOverrides(): string[] {
+    const cfg = vscode.workspace.getConfiguration(this.cfgSection);
+    const raw = cfg.get<unknown>("uia.busyOverridePatterns");
+    if (Array.isArray(raw) && raw.length > 0) {
+      return mergeConfiguredWithDefaults(raw, UIAAutoClicker.DEFAULT_BUSY_OVERRIDES);
+    }
+    return UIAAutoClicker.DEFAULT_BUSY_OVERRIDES;
   }
 
   private getNames(intent: "allow" | "keep"): string[] {
@@ -339,6 +366,7 @@ function runUIAFinder(
     exactOnly?: boolean;
     containsMode?: boolean;
     excludePatterns?: string[];
+    overridePatterns?: string[];
     widerControls?: boolean;
   } = {}
 ): Promise<UIAResult> {
@@ -346,6 +374,7 @@ function runUIAFinder(
     const namesJson = JSON.stringify(names);
     const procsJson = JSON.stringify(processNames);
     const excludesJson = JSON.stringify(opts.excludePatterns ?? []);
+    const overridesJson = JSON.stringify(opts.overridePatterns ?? []);
     const probeOnly = opts.probeOnly ? "$true" : "$false";
     const exactOnly = opts.exactOnly ? "$true" : "$false";
     const containsMode = opts.containsMode ? "$true" : "$false";
@@ -366,6 +395,7 @@ Add-Type -AssemblyName UIAutomationTypes  | Out-Null
 $names = '${namesJson.replace(/'/g, "''")}' | ConvertFrom-Json
 $procs = '${procsJson.replace(/'/g, "''")}' | ConvertFrom-Json
 $customExcludes = '${excludesJson.replace(/'/g, "''")}' | ConvertFrom-Json
+$customOverrides = '${overridesJson.replace(/'/g, "''")}' | ConvertFrom-Json
 $probeOnly = ${probeOnly}
 $exactOnly = ${exactOnly}
 $containsMode = ${containsMode}
@@ -453,6 +483,15 @@ $excludePrefixes = @("press ")
 $excludeSubstrings = @()
 foreach ($e in $customExcludes) { if ($e) { $excludeSubstrings += $e.ToString().Trim().ToLowerInvariant() } }
 
+# Caller-supplied override substrings — checked BEFORE excludes. A control
+# whose normalized name contains any of these is treated as an immediate
+# busy hit, bypassing both the exclude filter and the regular keyword scan.
+# Used by the busy probe to whitelist the chat cancel button
+# ("Cancel (Alt+BackSpace)") that would otherwise be caught by the "(alt+"
+# exclude meant for Alt-letter menu chrome.
+$overrideSubstrings = @()
+foreach ($o in $customOverrides) { if ($o) { $overrideSubstrings += $o.ToString().Trim().ToLowerInvariant() } }
+
 $matched = $null
 $candidates = New-Object System.Collections.Generic.HashSet[string]
 $totalControls = 0
@@ -466,31 +505,39 @@ foreach ($wins in $windowsByPid.Values) {
         if (-not $ctrlName) { continue }
         $normCtrl = $ctrlName.Trim().ToLowerInvariant()
         if (-not $normCtrl) { continue }
-        $excluded = $false
-        foreach ($pfx in $excludePrefixes) {
-          if ($normCtrl.StartsWith($pfx)) { $excluded = $true; break }
-        }
-        if (-not $excluded) {
-          foreach ($sub in $excludeSubstrings) {
-            if ($normCtrl.Contains($sub)) { $excluded = $true; break }
-          }
-        }
-        if ($excluded) {
-          if ($candidates.Count -lt 60) { [void]$candidates.Add($ctrlName) }
-          continue
-        }
+        # Override list wins against excludes. Anything matching here
+        # short-circuits straight to "hit" — used for the chat cancel
+        # button whose name contains the otherwise-excluded "(alt+".
         $hit = $false
-        foreach ($wanted in $normNames) {
-          if ($containsMode) {
-            # Probe mode: look for the keyword anywhere in the name. Used
-            # only for the busy detector -- combined with the exclude list
-            # this catches inline "Loading"/"QUEUED"/"Generating" labels.
-            if ($normCtrl.Contains($wanted)) { $hit = $true; break }
-          } elseif ($exactOnly) {
-            if ($normCtrl -eq $wanted) { $hit = $true; break }
-          } elseif ($normCtrl -eq $wanted -or $normCtrl.StartsWith($wanted)) {
-            $hit = $true
-            break
+        foreach ($ov in $overrideSubstrings) {
+          if ($normCtrl.Contains($ov)) { $hit = $true; break }
+        }
+        if (-not $hit) {
+          $excluded = $false
+          foreach ($pfx in $excludePrefixes) {
+            if ($normCtrl.StartsWith($pfx)) { $excluded = $true; break }
+          }
+          if (-not $excluded) {
+            foreach ($sub in $excludeSubstrings) {
+              if ($normCtrl.Contains($sub)) { $excluded = $true; break }
+            }
+          }
+          if ($excluded) {
+            if ($candidates.Count -lt 60) { [void]$candidates.Add($ctrlName) }
+            continue
+          }
+          foreach ($wanted in $normNames) {
+            if ($containsMode) {
+              # Probe mode: look for the keyword anywhere in the name. Used
+              # only for the busy detector -- combined with the exclude list
+              # this catches inline "Loading"/"QUEUED"/"Generating" labels.
+              if ($normCtrl.Contains($wanted)) { $hit = $true; break }
+            } elseif ($exactOnly) {
+              if ($normCtrl -eq $wanted) { $hit = $true; break }
+            } elseif ($normCtrl -eq $wanted -or $normCtrl.StartsWith($wanted)) {
+              $hit = $true
+              break
+            }
           }
         }
         if (-not $hit) {
