@@ -15,6 +15,7 @@ type IncomingFromWebview =
   | { type: "autoRun.toggle" }
   | { type: "singletMode.toggle" }
   | { type: "prompt.send"; targetId: string; prompt: string; includeActiveFile?: boolean }
+  | { type: "prompt.stop" }
   | { type: "prompt.saveDefault"; prompt: string }
   | { type: "affectedChats.remove"; id: string }
   | { type: "activity.clear" }
@@ -230,6 +231,31 @@ export class WebviewHost implements vscode.WebviewViewProvider {
               await this.affected.setActiveTargetId(targetId);
             } else {
               this.activity.add("BLOCK", `Start a Chat failed: ${result.reason ?? "dispatch returned not-ok"}`, { targetId });
+            }
+            this.broadcastAutoRun();
+            this.broadcastAffectedChats();
+            return;
+          }
+
+          case "prompt.stop": {
+            // Targeted stop. Removes only the most-recently-active Active
+            // Fire (the session whose Start/nudge cycle the user is most
+            // likely halting). Other Active Fires stay registered so their
+            // own ticker cycles continue. If this was the last fire, also
+            // disable Auto-Run so the toggle reflects the resting state.
+            const newest = this.affected.list()[0];
+            if (!newest) {
+              this.logger.info({ fn: "onDidReceiveMessage" }, "Stop Clicked With No Active Fires");
+              this.broadcastAutoRun();
+              this.broadcastAffectedChats();
+              return;
+            }
+            this.logger.user({ fn: "onDidReceiveMessage" }, "Stop Clicked", { id: newest.id, label: newest.label });
+            this.activity.add("INFO", `Stop requested — clearing Active Fire "${newest.label}"`, { id: newest.id });
+            await this.affected.removeSession(newest.id);
+            if (!this.affected.hasActiveFires()) {
+              await this.autoRun.setEnabled(false);
+              this.activity.add("INFO", "No Active Fires remain — Auto-Run disabled");
             }
             this.broadcastAutoRun();
             this.broadcastAffectedChats();

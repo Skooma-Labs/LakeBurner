@@ -53,6 +53,7 @@ type OutgoingMessage =
   | { type: "autoRun.toggle" }
   | { type: "singletMode.toggle" }
   | { type: "prompt.send"; targetId: string; prompt: string; includeActiveFile: boolean }
+  | { type: "prompt.stop" }
   | { type: "prompt.saveDefault"; prompt: string }
   | { type: "affectedChats.remove"; id: string }
   | { type: "activity.clear" }
@@ -245,9 +246,14 @@ function reconcileStartButton(): void {
   const btn = el<HTMLButtonElement>("sendPromptBtn");
   if (!btn) return;
   const running = autoRunEnabled && lastKnownSessions.length > 0;
-  btn.disabled = running;
+  // The button is dual-purpose: Start when idle, Stop when running. Clicking
+  // Stop fires a separate message handled by the host (disables Auto-Run +
+  // clears Active Fires) — useful when the user manually halts a chat via
+  // Copilot's own Stop button and wants LakeBurner to back off too.
+  btn.disabled = false;
   btn.classList.toggle("is-running", running);
-  btn.textContent = running ? "Running..." : "Start";
+  btn.dataset.mode = running ? "stop" : "start";
+  btn.textContent = running ? "Stop" : "Start";
 }
 
 function getSelectedSessionFilter(): string {
@@ -500,6 +506,12 @@ function bindButtons(): void {
   const sendPromptBtn = el<HTMLButtonElement>("sendPromptBtn");
   if (sendPromptBtn) {
     sendPromptBtn.addEventListener("click", () => {
+      if (sendPromptBtn.dataset.mode === "stop") {
+        log.user("ui.prompt.stop", "Stop Clicked");
+        sendPromptBtn.disabled = true;  // debounce until host broadcasts new state
+        postMessageToHost({ type: "prompt.stop" });
+        return;
+      }
       const select = el<HTMLSelectElement>("promptTarget");
       const text = el<HTMLTextAreaElement>("promptText");
       const activeFile = el<HTMLInputElement>("activeFileCheckbox");
