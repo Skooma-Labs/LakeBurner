@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import type { Logger } from "../frontend/ts/Logger";
 import type { ActivityLog } from "./ActivityLog";
 
-export type DispatchMode = "string" | "object-query" | "clipboard";
+export type DispatchMode = "string" | "object-query" | "clipboard" | "codex-deeplink";
 
 export type PromptTarget = {
   id: string;
@@ -12,6 +12,7 @@ export type PromptTarget = {
   /**
    * For mode=object-query: extra static fields merged into the command argument
    * (e.g. `{ mode: "agent" }` for Copilot Chat agent mode).
+   * For mode=codex-deeplink: optional `{ path, originUrl, includeWorkspacePath, fallbackCommand }`.
    */
   extraArgs?: Record<string, unknown>;
 };
@@ -40,8 +41,8 @@ const DEFAULT_TARGETS: PromptTarget[] = [
   {
     id: "codex",
     label: "OpenAI Codex",
-    command: "chatgpt.newChat",
-    mode: "clipboard",
+    command: "codex://new",
+    mode: "codex-deeplink",
   },
 ];
 
@@ -118,11 +119,18 @@ export class PromptDispatcher {
         }
 
         case "clipboard": {
-          await vscode.env.clipboard.writeText(trimmed);
-          await vscode.commands.executeCommand(target.command);
-          vscode.window.showInformationMessage(
-            `LakeBurner: prompt copied to clipboard. Paste it into ${target.label} with Ctrl+V.`
-          );
+          await this.copyToClipboardAndOpen(target, trimmed);
+          break;
+        }
+
+        case "codex-deeplink": {
+          const opened = await this.openCodexDeeplink(target, trimmed);
+          if (!opened) {
+            this.activity.add("INFO", `Codex deeplink was not accepted; falling back to clipboard for ${target.label}`, {
+              mode: target.mode,
+            });
+            await this.copyToClipboardAndOpen(target, trimmed);
+          }
           break;
         }
       }
@@ -154,11 +162,70 @@ export class PromptDispatcher {
 
     const id = typeof r.id === "string" ? r.id.trim() : "";
     const command = typeof r.command === "string" ? r.command.trim() : "";
-    const mode = r.mode === "string" || r.mode === "object-query" || r.mode === "clipboard" ? r.mode : "object-query";
+    const mode = this.isDispatchMode(r.mode) ? r.mode : "object-query";
     const label = typeof r.label === "string" && r.label.trim() ? r.label.trim() : id;
     const extraArgs = r.extraArgs && typeof r.extraArgs === "object" ? (r.extraArgs as Record<string, unknown>) : undefined;
 
     if (!id || !command) return null;
     return { id, label, command, mode, extraArgs };
+  }
+
+  private async copyToClipboardAndOpen(target: PromptTarget, prompt: string): Promise<void> {
+    await vscode.env.clipboard.writeText(prompt);
+
+    const fallbackCommand =
+      this.getStringExtra(target, "fallbackCommand") ?? (target.mode === "codex-deeplink" ? "chatgpt.newChat" : target.command);
+    if (fallbackCommand) await vscode.commands.executeCommand(fallbackCommand);
+
+    vscode.window.showInformationMessage(
+      `LakeBurner: prompt copied to clipboard. Paste it into ${target.label} with Ctrl+V.`
+    );
+  }
+
+  private async openCodexDeeplink(target: PromptTarget, prompt: string): Promise<boolean> {
+    const query = new URLSearchParams();
+    query.set("prompt", prompt);
+
+    const includeWorkspacePath = this.getBooleanExtra(target, "includeWorkspacePath") !== false;
+    const path = this.getStringExtra(target, "path") ?? (includeWorkspacePath ? this.getWorkspacePath() : undefined);
+    if (path) query.set("path", path);
+
+    const originUrl = this.getStringExtra(target, "originUrl");
+    if (originUrl) query.set("originUrl", originUrl);
+
+    const uri = vscode.Uri.parse(`codex://new?${query.toString()}`);
+
+    this.logger.user({ fn: "openCodexDeeplink" }, "Opening Codex Deeplink", {
+      target: target.id,
+      hasPath: Boolean(path),
+      hasOriginUrl: Boolean(originUrl),
+      length: prompt.length,
+    });
+
+    return vscode.env.openExternal(uri);
+  }
+
+  private getWorkspacePath(): string | undefined {
+    const activeUri = vscode.window.activeTextEditor?.document.uri;
+    if (activeUri) {
+      const activeFolder = vscode.workspace.getWorkspaceFolder(activeUri);
+      if (activeFolder?.uri.scheme === "file") return activeFolder.uri.fsPath;
+    }
+
+    return vscode.workspace.workspaceFolders?.find((folder) => folder.uri.scheme === "file")?.uri.fsPath;
+  }
+
+  private getStringExtra(target: PromptTarget, key: string): string | undefined {
+    const value = target.extraArgs?.[key];
+    return typeof value === "string" && value.trim() ? value.trim() : undefined;
+  }
+
+  private getBooleanExtra(target: PromptTarget, key: string): boolean | undefined {
+    const value = target.extraArgs?.[key];
+    return typeof value === "boolean" ? value : undefined;
+  }
+
+  private isDispatchMode(value: unknown): value is DispatchMode {
+    return value === "string" || value === "object-query" || value === "clipboard" || value === "codex-deeplink";
   }
 }
