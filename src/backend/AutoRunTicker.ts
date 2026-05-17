@@ -319,7 +319,18 @@ export class AutoRunTicker implements vscode.Disposable {
       this.lastFireAt = Date.now();
       this.lastBusyAt = Date.now();
       if (!result.ok) {
-        this.activity.add("BLOCK", `Keep Going dispatch failed: ${result.reason ?? "unknown"}`, { result });
+        // For uia-compose, a non-ok result usually means "composer not
+        // realized yet" (e.g. chat panel hidden) — not a real failure.
+        // Allow retry on the next tick by NOT advancing lastKeepGoingAt past
+        // the cooldown: rewind it so the next idle window can fire.
+        if (result.via === "uia-compose") {
+          this.lastKeepGoingAt = 0;
+          this.activity.add("INFO", `Keep Going via ${result.via} skipped: ${result.reason ?? "unknown"} — will retry`, { result });
+        } else {
+          this.activity.add("BLOCK", `Keep Going dispatch failed: ${result.reason ?? "unknown"}`, { result });
+        }
+      } else {
+        this.activity.add("INFO", `Keep Going dispatched via ${result.via}`, { via: result.via, targetId });
       }
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);

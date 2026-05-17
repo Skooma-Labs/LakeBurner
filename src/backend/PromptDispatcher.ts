@@ -1,8 +1,9 @@
 import * as vscode from "vscode";
 import type { Logger } from "../frontend/ts/Logger";
 import type { ActivityLog } from "./ActivityLog";
+import type { UIAAutoClicker } from "./UIAAutoClicker";
 
-export type DispatchMode = "string" | "object-query" | "clipboard" | "codex-deeplink";
+export type DispatchMode = "string" | "object-query" | "clipboard" | "codex-deeplink" | "uia-compose";
 
 export type PromptTarget = {
   id: string;
@@ -29,7 +30,7 @@ const DEFAULT_TARGETS: PromptTarget[] = [
     id: "copilot",
     label: "GitHub Copilot",
     command: "workbench.action.chat.open",
-    mode: "object-query",
+    mode: "uia-compose",
     extraArgs: { mode: "agent" },
   },
   {
@@ -50,7 +51,8 @@ export class PromptDispatcher {
   constructor(
     private readonly cfgSection: string,
     private readonly logger: Logger,
-    private readonly activity: ActivityLog
+    private readonly activity: ActivityLog,
+    private readonly uia: UIAAutoClicker
   ) {}
 
   public listTargets(): PromptTarget[] {
@@ -130,6 +132,32 @@ export class PromptDispatcher {
               mode: target.mode,
             });
             await this.copyToClipboardAndOpen(target, trimmed);
+          }
+          break;
+        }
+
+        case "uia-compose": {
+          // Pure background path: type into the chat composer via UIA
+          // ValuePattern, invoke Send via UIA InvokePattern. No focus theft,
+          // no cursor movement. We intentionally do NOT fall back to
+          // executeCommand on miss — that would re-introduce the
+          // foreground/cursor bug this mode exists to prevent. The caller
+          // (Auto-Run ticker) retries on the next tick.
+          const restoreCfg = vscode.workspace
+            .getConfiguration(this.cfgSection)
+            .get<boolean>("uia.restoreMinimizedForNudge", true);
+          const result = await this.uia.composeAndSend(trimmed, {
+            silent: false,
+            restoreIfMinimized: restoreCfg,
+          });
+          if (!result.ok) {
+            const reason = result.reason ?? "unknown";
+            this.logger.info({ fn: "send" }, "UIA Compose Skipped", { target: target.id, reason });
+            this.activity.add("INFO", `UIA compose skipped for ${target.label}: ${reason} — will retry next tick`, {
+              mode: target.mode,
+              reason,
+            });
+            return { ok: false, via: target.mode, target, reason };
           }
           break;
         }
@@ -226,6 +254,12 @@ export class PromptDispatcher {
   }
 
   private isDispatchMode(value: unknown): value is DispatchMode {
-    return value === "string" || value === "object-query" || value === "clipboard" || value === "codex-deeplink";
+    return (
+      value === "string" ||
+      value === "object-query" ||
+      value === "clipboard" ||
+      value === "codex-deeplink" ||
+      value === "uia-compose"
+    );
   }
 }

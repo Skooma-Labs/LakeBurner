@@ -62,6 +62,36 @@ export class UIAAutoClicker {
     "Clear Queued Prompts",
   ];
 
+  /**
+   * Accessible names the chat composer's Edit/Document control may use.
+   * Different chat extensions (Copilot, Claude, Codex) and different VS Code
+   * versions expose slightly different names — we try them all and the first
+   * match wins. Configurable via `lakeburner.uia.chatInputNames`.
+   */
+  public static readonly DEFAULT_CHAT_INPUT_NAMES = [
+    "Type your task",
+    "Ask Copilot",
+    "Ask Copilot or type / for commands",
+    "Type a message",
+    "Chat input",
+    "Message",
+    "Ask anything",
+    "Chat Message",
+  ];
+
+  /**
+   * Accessible names the chat composer's Send button may use. Some skins
+   * label it with the keybinding suffix.
+   */
+  public static readonly DEFAULT_CHAT_SEND_NAMES = [
+    "Send (Enter)",
+    "Send and Dispatch",
+    "Send Message",
+    "Send Now",
+    "Send",
+    "Submit",
+  ];
+
   public static readonly DEFAULT_BUSY_NAMES = [
     // EXACT names of busy indicators. The probe matches case-insensitively
     // but requires the entire accessible name to equal one of these — chat
@@ -116,6 +146,76 @@ export class UIAAutoClicker {
    */
   public async pressRemoveAllQueued(opts: { silent?: boolean } = {}): Promise<string | null> {
     return this.pressByName("removeQueued", "Remove All Queued", this.getRemoveQueuedNames(), opts);
+  }
+
+  /**
+   * Type `text` into the VS Code chat composer (via UIA ValuePattern) and
+   * invoke the Send button. Pure background — never calls SetForegroundWindow,
+   * never moves the cursor. When the target window is minimized, optionally
+   * calls ShowWindowAsync(SW_SHOWNOACTIVATE) so the composer controls are
+   * realized in the UIA tree without raising over other apps or stealing
+   * focus.
+   *
+   * Returns a structured result describing what was matched. The ticker
+   * treats a non-ok result as "skip this tick, try again next time" — we
+   * intentionally do NOT fall back to a foregrounding command path.
+   */
+  public async composeAndSend(
+    text: string,
+    opts: { silent?: boolean; restoreIfMinimized?: boolean } = {}
+  ): Promise<ComposeResult> {
+    if (!this.isEnabled()) {
+      if (!opts.silent) {
+        this.activity.add("INFO", `UIA unavailable (platform=${process.platform})`, { strategy: "uia-compose" });
+      }
+      return { ok: false, reason: "UNSUPPORTED_PLATFORM" };
+    }
+    const trimmed = text;
+    if (!trimmed) return { ok: false, reason: "EMPTY_TEXT" };
+
+    const inputNames = this.getChatInputNames();
+    const sendNames = this.getChatSendNames();
+    const procs = this.getProcessNames();
+    const restoreIfMinimized = opts.restoreIfMinimized !== false;
+
+    let result: ComposeRunResult;
+    try {
+      result = await runUIAComposer(trimmed, inputNames, sendNames, procs, { restoreIfMinimized });
+    } catch (err: unknown) {
+      const reason = err instanceof Error ? err.message : String(err);
+      if (!opts.silent) {
+        this.logger.error({ fn: "composeAndSend" }, "UIA Composer Script Failed", { reason });
+        this.activity.add("BLOCK", `UIA compose failed to launch: ${reason}`, { strategy: "uia-compose" });
+      }
+      return { ok: false, reason: "SCRIPT_ERROR" };
+    }
+
+    const d = result.diagnostics;
+    if (result.ok) {
+      this.logger.task({ fn: "composeAndSend" }, "UIA Composed and Sent", {
+        input: result.matchedInput,
+        send: result.matchedSend,
+        diagnostics: d,
+      });
+      this.activity.add(
+        "APPROVE",
+        `UIA compose+send via "${result.matchedInput}" → "${result.matchedSend}" (procs=${d.pids.length}, wins=${d.windowCount}, controls=${d.controlCount}, ${d.elapsedMs}ms)`,
+        { strategy: "uia-compose", input: result.matchedInput, send: result.matchedSend, diagnostics: d }
+      );
+      return { ok: true, matchedInput: result.matchedInput, matchedSend: result.matchedSend };
+    }
+
+    if (!opts.silent) {
+      const sampleStr = d.candidates.length ? ` candidates: ${d.candidates.slice(0, 12).join(" | ")}` : "";
+      const errStr = d.error ? ` error: ${d.error}` : "";
+      this.logger.info({ fn: "composeAndSend" }, "UIA Compose Skipped", { reason: result.reason, diagnostics: d });
+      this.activity.add(
+        "INFO",
+        `UIA compose ${result.reason} (procs=${d.pids.length}, wins=${d.windowCount}, controls=${d.controlCount}, ${d.elapsedMs}ms).${sampleStr}${errStr}`,
+        { strategy: "uia-compose", reason: result.reason, diagnostics: d }
+      );
+    }
+    return { ok: false, reason: result.reason };
   }
 
   /**
@@ -184,6 +284,24 @@ export class UIAAutoClicker {
     return UIAAutoClicker.DEFAULT_REMOVE_QUEUED_NAMES;
   }
 
+  private getChatInputNames(): string[] {
+    const cfg = vscode.workspace.getConfiguration(this.cfgSection);
+    const raw = cfg.get<unknown>("uia.chatInputNames");
+    if (Array.isArray(raw) && raw.length > 0) {
+      return mergeConfiguredWithDefaults(raw, UIAAutoClicker.DEFAULT_CHAT_INPUT_NAMES);
+    }
+    return UIAAutoClicker.DEFAULT_CHAT_INPUT_NAMES;
+  }
+
+  private getChatSendNames(): string[] {
+    const cfg = vscode.workspace.getConfiguration(this.cfgSection);
+    const raw = cfg.get<unknown>("uia.chatSendNames");
+    if (Array.isArray(raw) && raw.length > 0) {
+      return mergeConfiguredWithDefaults(raw, UIAAutoClicker.DEFAULT_CHAT_SEND_NAMES);
+    }
+    return UIAAutoClicker.DEFAULT_CHAT_SEND_NAMES;
+  }
+
   private getProcessNames(): string[] {
     const cfg = vscode.workspace.getConfiguration(this.cfgSection);
     const raw = cfg.get<unknown>("uia.processNames");
@@ -247,6 +365,29 @@ export class UIAAutoClicker {
 type UIAResult = {
   matchedName?: string;
   reason?: string;
+  diagnostics: {
+    procs: string[];
+    pids: number[];
+    windowCount: number;
+    controlCount: number;
+    candidates: string[];
+    elapsedMs: number;
+    error?: string;
+  };
+};
+
+export type ComposeResult = {
+  ok: boolean;
+  matchedInput?: string;
+  matchedSend?: string;
+  reason?: string;
+};
+
+type ComposeRunResult = {
+  ok: boolean;
+  matchedInput?: string;
+  matchedSend?: string;
+  reason: string;
   diagnostics: {
     procs: string[];
     pids: number[];
@@ -594,6 +735,343 @@ $diag | ConvertTo-Json -Compress -Depth 5
         });
       } catch (parseErr) {
         resolve({
+          reason: "PARSE_ERROR",
+          diagnostics: { ...baseDiag, error: `${(parseErr as Error).message}; raw=${out.slice(0, 500)}` },
+        });
+      }
+    });
+  });
+}
+
+function runUIAComposer(
+  text: string,
+  inputNames: string[],
+  sendNames: string[],
+  processNames: string[],
+  opts: { restoreIfMinimized?: boolean } = {}
+): Promise<ComposeRunResult> {
+  return new Promise((resolve, reject) => {
+    const inputJson = JSON.stringify(inputNames);
+    const sendJson = JSON.stringify(sendNames);
+    const procsJson = JSON.stringify(processNames);
+    const textJson = JSON.stringify(text);
+    const restoreIfMinimized = opts.restoreIfMinimized ? "$true" : "$false";
+    const startedAt = Date.now();
+    // PowerShell composer: locate the chat input by accessible name, set its
+    // value via ValuePattern, then invoke the send button. Optionally restores
+    // (without focus) any minimized VS Code windows so the composer controls
+    // are realized in the UIA tree. Never raises a window, never moves the
+    // cursor, never sends synthesized keystrokes.
+    const script = `
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+Add-Type -AssemblyName UIAutomationClient | Out-Null
+Add-Type -AssemblyName UIAutomationTypes  | Out-Null
+
+$inputNames = '${inputJson.replace(/'/g, "''")}' | ConvertFrom-Json
+$sendNames  = '${sendJson.replace(/'/g, "''")}' | ConvertFrom-Json
+$procs      = '${procsJson.replace(/'/g, "''")}' | ConvertFrom-Json
+$composeText = '${textJson.replace(/'/g, "''")}' | ConvertFrom-Json
+$restoreIfMinimized = ${restoreIfMinimized}
+
+$diag = @{
+  pids = @()
+  windowCount = 0
+  controlCount = 0
+  candidates = @()
+  matchedInput = $null
+  matchedSend = $null
+  reason = $null
+}
+
+$pids = @()
+foreach ($pn in $procs) {
+  try { Get-Process -Name $pn -ErrorAction Stop | ForEach-Object { $pids += $_.Id } } catch {}
+}
+$diag.pids = $pids
+if ($pids.Count -eq 0) {
+  $diag.reason = "NO_PROCESS"
+  $diag | ConvertTo-Json -Compress -Depth 5
+  exit 0
+}
+
+# Restore minimized windows WITHOUT giving them focus or raising them above
+# other apps. SW_SHOWNOACTIVATE = 4. We never call SetForegroundWindow,
+# BringWindowToTop, or SwitchToThisWindow — those steal focus from the
+# foreground app (e.g. a fullscreen game).
+if ($restoreIfMinimized) {
+  Add-Type -Namespace LBN -Name Win -MemberDefinition @"
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern bool IsIconic(System.IntPtr hWnd);
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern bool ShowWindowAsync(System.IntPtr hWnd, int nCmdShow);
+"@ | Out-Null
+  foreach ($procId in $pids) {
+    try {
+      $p = Get-Process -Id $procId -ErrorAction Stop
+      $hwnd = $p.MainWindowHandle
+      if ($hwnd -ne [System.IntPtr]::Zero -and [LBN.Win]::IsIconic($hwnd)) {
+        [void][LBN.Win]::ShowWindowAsync($hwnd, 4)  # SW_SHOWNOACTIVATE
+      }
+    } catch {}
+  }
+  # Give Chromium a moment to realize the composer DOM/UIA tree.
+  Start-Sleep -Milliseconds 250
+}
+
+$root = [System.Windows.Automation.AutomationElement]::RootElement
+
+$windowsByPid = @{}
+foreach ($child in $root.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)) {
+  try {
+    $childPid = $child.Current.ProcessId
+    if ($pids -contains $childPid) {
+      if (-not $windowsByPid.ContainsKey($childPid)) { $windowsByPid[$childPid] = @() }
+      $windowsByPid[$childPid] += $child
+    }
+  } catch {}
+}
+$winCount = 0
+foreach ($v in $windowsByPid.Values) { $winCount += $v.Count }
+$diag.windowCount = $winCount
+if ($winCount -eq 0) {
+  $diag.reason = "NO_WINDOW"
+  $diag | ConvertTo-Json -Compress -Depth 5
+  exit 0
+}
+
+# Search both Edit and Document controls — different chat extensions use
+# different control types for the composer.
+$inputTypes = @(
+  [System.Windows.Automation.ControlType]::Edit,
+  [System.Windows.Automation.ControlType]::Document
+)
+$inputConds = @()
+foreach ($t in $inputTypes) {
+  $inputConds += New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, $t)
+}
+$inputSearchCond = New-Object System.Windows.Automation.OrCondition($inputConds)
+
+$sendTypes = @(
+  [System.Windows.Automation.ControlType]::Button,
+  [System.Windows.Automation.ControlType]::SplitButton
+)
+$sendConds = @()
+foreach ($t in $sendTypes) {
+  $sendConds += New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, $t)
+}
+$sendSearchCond = New-Object System.Windows.Automation.OrCondition($sendConds)
+
+$normInputs = @()
+foreach ($n in $inputNames) { if ($n) { $normInputs += $n.ToString().Trim().ToLowerInvariant() } }
+$normSends = @()
+foreach ($n in $sendNames) { if ($n) { $normSends += $n.ToString().Trim().ToLowerInvariant() } }
+
+$walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+$candidates = New-Object System.Collections.Generic.HashSet[string]
+$totalControls = 0
+
+# Skip controls hosted inside LakeBurner's own webview — if a future version
+# of our sidebar ever exposes an Edit, we must never type into it.
+function Test-InLakeBurnerPanel($ctrl) {
+  try {
+    $cur = $walker.GetParent($ctrl)
+    $depth = 0
+    while ($cur -ne $null -and $depth -lt 30) {
+      try {
+        $pn = $cur.Current.Name
+        if ($pn) {
+          $np = $pn.Trim().ToLowerInvariant()
+          if ($np.StartsWith("lakeburner")) { return $true }
+        }
+      } catch {}
+      $cur = $walker.GetParent($cur)
+      $depth++
+    }
+  } catch {}
+  return $false
+}
+
+$matchedInput = $null
+$matchedInputName = $null
+foreach ($wins in $windowsByPid.Values) {
+  foreach ($win in $wins) {
+    $controls = $win.FindAll([System.Windows.Automation.TreeScope]::Descendants, $inputSearchCond)
+    $totalControls += $controls.Count
+    foreach ($ctrl in $controls) {
+      try {
+        $ctrlName = $ctrl.Current.Name
+        if (-not $ctrlName) { continue }
+        $norm = $ctrlName.Trim().ToLowerInvariant()
+        if (-not $norm) { continue }
+        $hit = $false
+        foreach ($wanted in $normInputs) {
+          if ($norm -eq $wanted -or $norm.StartsWith($wanted) -or $norm.Contains($wanted)) { $hit = $true; break }
+        }
+        if (-not $hit) {
+          if ($candidates.Count -lt 60) { [void]$candidates.Add($ctrlName) }
+          continue
+        }
+        if (-not $ctrl.Current.IsEnabled -or $ctrl.Current.IsOffscreen) { continue }
+        if (Test-InLakeBurnerPanel $ctrl) {
+          if ($candidates.Count -lt 60) { [void]$candidates.Add($ctrlName) }
+          continue
+        }
+        $matchedInput = $ctrl
+        $matchedInputName = $ctrlName
+        break
+      } catch {}
+    }
+    if ($matchedInput) { break }
+  }
+  if ($matchedInput) { break }
+}
+
+if (-not $matchedInput) {
+  $diag.controlCount = $totalControls
+  $diag.candidates = @($candidates | Select-Object -First 30)
+  $diag.reason = "NO_INPUT"
+  $diag | ConvertTo-Json -Compress -Depth 5
+  exit 0
+}
+
+# Inject the text via ValuePattern. This is the only background-safe path —
+# SendKeys/SendInput would require the window to be foreground.
+$valuePatternObj = $null
+if (-not $matchedInput.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$valuePatternObj)) {
+  $diag.controlCount = $totalControls
+  $diag.candidates = @($candidates | Select-Object -First 30)
+  $diag.matchedInput = $matchedInputName
+  $diag.reason = "NO_VALUE_PATTERN"
+  $diag | ConvertTo-Json -Compress -Depth 5
+  exit 0
+}
+try {
+  $valuePatternObj.SetValue($composeText)
+} catch {
+  $diag.controlCount = $totalControls
+  $diag.candidates = @($candidates | Select-Object -First 30)
+  $diag.matchedInput = $matchedInputName
+  $diag.reason = "SET_VALUE_FAILED"
+  $diag | ConvertTo-Json -Compress -Depth 5
+  exit 0
+}
+
+# Find the send button. Scope the search to the same top-level window that
+# contains the matched input — keeps us from invoking an unrelated "Send"
+# button in another panel.
+$inputTop = $matchedInput
+try {
+  $cur = $walker.GetParent($inputTop)
+  while ($cur -ne $null) {
+    $inputTop = $cur
+    try {
+      if ($cur.Current.ControlType -eq [System.Windows.Automation.ControlType]::Window) { break }
+    } catch {}
+    $cur = $walker.GetParent($cur)
+  }
+} catch {}
+
+$matchedSend = $null
+$matchedSendName = $null
+try {
+  $sendControls = $inputTop.FindAll([System.Windows.Automation.TreeScope]::Descendants, $sendSearchCond)
+  foreach ($ctrl in $sendControls) {
+    try {
+      $cn = $ctrl.Current.Name
+      if (-not $cn) { continue }
+      $norm = $cn.Trim().ToLowerInvariant()
+      if (-not $norm) { continue }
+      $hit = $false
+      foreach ($wanted in $normSends) {
+        if ($norm -eq $wanted -or $norm.StartsWith($wanted)) { $hit = $true; break }
+      }
+      if (-not $hit) { continue }
+      if (-not $ctrl.Current.IsEnabled -or $ctrl.Current.IsOffscreen) { continue }
+      if (Test-InLakeBurnerPanel $ctrl) { continue }
+      $invokeObj = $null
+      if ($ctrl.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$invokeObj)) {
+        $invokeObj.Invoke()
+        $matchedSend = $ctrl
+        $matchedSendName = $cn
+        break
+      }
+    } catch {}
+  }
+} catch {}
+
+$diag.controlCount = $totalControls
+$diag.candidates = @($candidates | Select-Object -First 30)
+$diag.matchedInput = $matchedInputName
+if ($matchedSend) {
+  $diag.matchedSend = $matchedSendName
+  $diag.reason = "MATCH"
+} else {
+  $diag.reason = "NO_SEND_BUTTON"
+}
+$diag | ConvertTo-Json -Compress -Depth 5
+`.trim();
+
+    const child = spawn(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+      { windowsHide: true }
+    );
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (c) => (stdout += c.toString()));
+    child.stderr.on("data", (c) => (stderr += c.toString()));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      const elapsedMs = Date.now() - startedAt;
+      const baseDiag = {
+        procs: processNames,
+        pids: [] as number[],
+        windowCount: 0,
+        controlCount: 0,
+        candidates: [] as string[],
+        elapsedMs,
+      };
+      if (code !== 0) {
+        resolve({
+          ok: false,
+          reason: "SCRIPT_ERROR",
+          diagnostics: { ...baseDiag, error: stderr.trim() || stdout.trim() || `exit ${code}` },
+        });
+        return;
+      }
+      const out = stdout.trim();
+      try {
+        const parsed = JSON.parse(out) as {
+          pids?: number[];
+          windowCount?: number;
+          controlCount?: number;
+          candidates?: string[];
+          matchedInput?: string | null;
+          matchedSend?: string | null;
+          reason?: string;
+        };
+        const ok = parsed.reason === "MATCH";
+        resolve({
+          ok,
+          matchedInput: parsed.matchedInput ?? undefined,
+          matchedSend: parsed.matchedSend ?? undefined,
+          reason: parsed.reason ?? "UNKNOWN",
+          diagnostics: {
+            ...baseDiag,
+            pids: parsed.pids ?? [],
+            windowCount: parsed.windowCount ?? 0,
+            controlCount: parsed.controlCount ?? 0,
+            candidates: parsed.candidates ?? [],
+          },
+        });
+      } catch (parseErr) {
+        resolve({
+          ok: false,
           reason: "PARSE_ERROR",
           diagnostics: { ...baseDiag, error: `${(parseErr as Error).message}; raw=${out.slice(0, 500)}` },
         });

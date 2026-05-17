@@ -31,7 +31,7 @@ export async function activate(context: vscode.ExtensionContext) {
   activity.add("INFO", "Active Fires reset for new session");
   const uia = new UIAAutoClicker(CFG_SECTION, logger, activity);
   const autoClicker = new AutoClicker(CFG_SECTION, logger, activity, context, uia);
-  const dispatcher = new PromptDispatcher(CFG_SECTION, logger, activity);
+  const dispatcher = new PromptDispatcher(CFG_SECTION, logger, activity, uia);
   const ticker = new AutoRunTicker(CFG_SECTION, logger, autoRun, autoClicker, affected, activity, dispatcher);
   ticker.start(context);
 
