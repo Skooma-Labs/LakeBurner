@@ -232,7 +232,7 @@ This is optional under-the-hood observability support. LakeBurner does not depen
 ### Auto-Run
 
 - `lakeburner.autoRun.tickIntervalMs`: ticker interval in milliseconds. Default `3000`.
-- `lakeburner.autoRun.requireWindowFocus`: only tick while the VS Code window is focused. Default `true`.
+- `lakeburner.autoRun.requireWindowFocus`: only tick while the VS Code window is focused. Default `false` — UIA presses buttons in-place, so background work is safe.
 - `lakeburner.autoRun.keepGoingEnabled`: enable idle nudge dispatch. Default `true`.
 - `lakeburner.autoRun.keepGoingAfterIdleMs`: required quiet time before nudging. Default `15000`.
 - `lakeburner.autoRun.keepGoingIdleStreak`: number of consecutive idle confirmations. Default `3`.

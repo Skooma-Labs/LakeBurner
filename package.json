@@ -254,8 +254,8 @@
           },
           "lakeburner.autoRun.requireWindowFocus": {
             "type": "boolean",
-            "default": true,
-            "markdownDescription": "When `true`, the Auto-Run ticker only fires while the VS Code window is focused. Prevents background ticks from approving things while you're working in another app.",
+            "default": false,
+            "markdownDescription": "When `true`, the Auto-Run ticker only fires while the VS Code window is focused. Default `false` — UIA `Invoke()` presses buttons in-place without raising the window or moving the mouse, so background ticks are safe while you work in another app. Set to `true` to opt back in to focus-gating.",
             "scope": "application"
           },
           "lakeburner.autoRun.keepGoingEnabled": {

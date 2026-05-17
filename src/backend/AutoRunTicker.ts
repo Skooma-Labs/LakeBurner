@@ -132,7 +132,7 @@ export class AutoRunTicker implements vscode.Disposable {
     }
 
     const cfg = vscode.workspace.getConfiguration(this.cfgSection);
-    const requireFocus = cfg.get<boolean>("autoRun.requireWindowFocus", true);
+    const requireFocus = cfg.get<boolean>("autoRun.requireWindowFocus", false);
     if (requireFocus && !vscode.window.state.focused) {
       this.noteSkip("VS Code window not focused");
       return;

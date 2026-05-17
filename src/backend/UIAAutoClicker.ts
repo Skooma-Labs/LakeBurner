@@ -63,19 +63,38 @@ export class UIAAutoClicker {
   ];
 
   public static readonly DEFAULT_BUSY_NAMES = [
-    // Exact (prefix-match) names of the chat composer's cancel/stop button.
-    // When this button is present the chat is still generating; anything
-    // else (Send, "[Alt] Send to New Chat …") means idle and we may nudge.
+    // EXACT names of busy indicators. The probe matches case-insensitively
+    // but requires the entire accessible name to equal one of these — chat
+    // transcript Text controls contain full sentences, so they cannot
+    // false-positive on a single-word status label. A previous broad
+    // substring scan over transcript content stuck the probe in busy
+    // forever; this list intentionally stays narrow.
     //
-    // Previous broad substring-scan approaches false-positived on chat
-    // transcript text ("the build is running", old "Stop" labels in earlier
-    // turns) and left the probe stuck in busy forever — Keep Going never
-    // fired. The composer submit button is the single source of truth for
-    // generation state and is unambiguous to match.
+    // Composer cancel/stop button — primary signal in normal chat.
     "Cancel (Alt+BackSpace)",
     "Cancel chat request",
     "Stop generating",
     "Stop chat request",
+    // Agent-mode standalone status labels. Required because in agent /
+    // tool-orchestration mode the composer cancel button can briefly
+    // disappear between sub-steps (e.g. while the model is "Evaluating"
+    // a tool result) — a cancel-only probe declares idle in that window
+    // and queues the nudge on top of an active turn. Include ellipsis
+    // variants because VS Code renders these labels with U+2026 / "..."
+    // depending on locale and chat type.
+    "Evaluating",
+    "Evaluating...",
+    "Evaluating…",
+    "Generating",
+    "Generating...",
+    "Generating…",
+    "Thinking",
+    "Thinking...",
+    "Thinking…",
+    "Working",
+    "Working...",
+    "Working…",
+    "QUEUED",
   ];
 
   /**
@@ -174,13 +193,14 @@ export class UIAAutoClicker {
   }
 
   /**
-   * Probe-only UIA scan: returns the matched button name if the chat
-   * composer's cancel/stop button ("Cancel (Alt+BackSpace)", "Stop
-   * generating", etc.) is present, else null. Button-only, exact/prefix
-   * name match — does NOT scan transcript text or use substring matching,
-   * which previously produced permanent false-positives on conversational
-   * content. Does NOT invoke any control. Used by AutoRunTicker to avoid
-   * sending the Keep Going prompt while an assistant is still streaming.
+   * Probe-only UIA scan: returns the matched control name if any busy
+   * indicator is present — composer cancel/stop button OR a standalone
+   * agent-mode status label ("Evaluating...", "QUEUED", etc.) — else null.
+   * EXACT name match, case-insensitive; does NOT use substring matching
+   * over transcript text, which previously produced permanent false-
+   * positives on conversational content. Does NOT invoke any control.
+   * Used by AutoRunTicker to avoid sending the Keep Going prompt while an
+   * assistant is still streaming or mid-tool-orchestration.
    */
   public async findBusyIndicator(opts: { silent?: boolean } = {}): Promise<string | null> {
     if (!this.isEnabled()) return null;
@@ -192,10 +212,17 @@ export class UIAAutoClicker {
     try {
       result = await runUIAFinder(names, procs, {
         probeOnly: true,
+        // Exact-name match against the busy-name list. We MUST NOT use
+        // substring matching here — that scans transcript text and false-
+        // positives on any conversational use of "stop", "running", etc.
+        exactOnly: true,
         containsMode: false,
         excludePatterns: excludes,
         overridePatterns: overrides,
-        widerControls: false,
+        // Include Text/Group/etc. controls so the standalone agent-mode
+        // status labels ("Evaluating...", "QUEUED") are visible to the
+        // scan. Exact-name match keeps this safe against transcript text.
+        widerControls: true,
       });
     } catch (err: unknown) {
       const reason = err instanceof Error ? err.message : String(err);
